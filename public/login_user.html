@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ログイン</title>
+</head>
+<body>
+  <h1>ログイン</h1>
+
+  <label>名前</label>
+  <select id="nameSelect"></select>
+
+  <label>パスコード（4桁）</label>
+  <input type="password" id="pin" maxlength="4" pattern="\d{4}" />
+
+  <button onclick="doLogin()">ログイン</button>
+
+<script>
+// --- ① ページ読み込み時にプルダウンへユーザー一覧をセット ---
+async function loadUsers() {
+  const res = await fetch('/api/users/list');
+  const names = await res.json();
+
+  const sel = document.getElementById('nameSelect');
+  sel.innerHTML = "";
+
+  names.forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = u.name;
+    opt.textContent = u.name;
+    sel.appendChild(opt);
+  });
+}
+
+loadUsers();
+
+// --- ② ログイン処理 ---
+async function doLogin() {
+  const name = document.getElementById('nameSelect').value;
+  const pin = document.getElementById('pin').value;
+
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, pin })
+  });
+
+  const data = await res.json();
+
+  if (!data.ok) {
+    alert(data.error || "ログイン失敗");
+    return;
+  }
+
+  // 入力欄クリア
+  document.getElementById('pin').value = "";
+
+  if (data.is_staff) {
+    location.href = "/staff_menu.html";
+  } else {
+    location.href = "/index.html"; // 利用者トップ
+  }
+}
+</script>
+</body>
+</html>

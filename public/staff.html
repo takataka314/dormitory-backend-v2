@@ -1,0 +1,193 @@
+const staffHtml = `<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>スタッフ管理</title>
+  <style>
+    body{font-family:system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; padding:12px}
+    input,select,button,textarea{padding:6px; font-size:14px}
+    table{border-collapse:collapse;width:100%}
+    th,td{border:1px solid #ddd;padding:8px}
+    .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+    .col{flex:1}
+    .small{width:80px}
+  </style>
+</head>
+<body>
+  <h2>スタッフ管理ページ</h2>
+  <div>
+    <button id="toMain">利用画面へ</button>
+    <!-- 物品一括追加ページへ -->
+    <button onclick="location.href='/bulk_item_add.html'" 
+            style="padding:10px 20px; font-size:18px; margin:10px;">
+    物品一括追加ページへ
+    </button>
+
+    <button id="logoutStaff">ログアウト</button>
+  </div>
+
+  <section>
+    <h3>返却期限（現在: <span id="currentDue">-</span> 日）</h3>
+    <div class="row">
+      <input id="dueDays" type="number" min="1" class="small" />
+      <button id="setDue">変更</button>
+    </div>
+  </section>
+
+  <section>
+    <h3>物品管理</h3>
+    <div class="row">
+      <input id="newCategory" placeholder="カテゴリ(例: 消耗品)" />
+      <input id="newName" placeholder="名前(例: ガムテープ)" />
+      <input id="newQty" type="number" placeholder="数量" class="small" value="1" />
+      <button id="addItem">追加</button>
+    </div>
+    <div>
+      <h4>一括追加（JSON配列）</h4>
+      <textarea id="bulkJson" rows="4" style="width:100%" placeholder='[{"category":"消耗品","name":"ガムテープ","total_qty":10}, ...]'></textarea>
+      <div class="row"><button id="bulkAdd">一括追加</button><span id="bulkMsg"></span></div>
+    </div>
+    <div>
+      <h4>物品一覧・検索</h4>
+      <input id="itemSearch" placeholder="検索" /> <button id="itemSearchBtn">検索</button>
+      <table id="itemsTable"><thead><tr><th>ID</th><th>カテゴリ</th><th>名前</th><th>合計数</th><th>残数</th><th>操作</th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section>
+    <h3>貸出/返却履歴（スタッフ専用）</h3>
+    <div class="row">
+      <input id="histSearch" placeholder="利用者名 or 物品名" />
+      <button id="histSearchBtn">検索</button>
+      <select id="histPage"></select>
+    </div>
+    <table id="histTable"><thead><tr><th>ID</th><th>借出日</th><th>物品</th><th>数量</th><th>借り手</th><th>期限</th><th>返却日</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section>
+    <h3>期限切れ一覧</h3>
+    <button id="loadOverdue">読み込み</button>
+    <table id="overdueTable"><thead><tr><th>ID</th><th>物品</th><th>借り手</th><th>期限</th><th>残日数</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section>
+    <h3>利用者（一覧・一括登録・削除）</h3>
+    <div class="row">
+      <textarea id="bulkUsers" rows="3" placeholder="1行につき: 名前,メール,4桁PIN"></textarea>
+      <button id="bulkUsersAdd">一括登録</button>
+    </div>
+    <table id="usersTable"><thead><tr><th>ID</th><th>名前</th><th>メール</th><th>スタッフ</th><th>操作</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section>
+    <h3>よく貸し出される物品（Top10）</h3>
+    <button id="loadTop">読み込み</button>
+    <ol id="topList"></ol>
+  </section>
+
+<script>
+  async function api(path,opt){
+    const r = await fetch(path,opt);
+    if(!r.ok){ try{ const j=await r.json(); alert(j.error||'エラー'); }catch(e){alert('エラー')} throw new Error('api'); }
+    return r.json();
+  }
+
+  document.getElementById('toMain').addEventListener('click', ()=>{ location.href='/' });
+  document.getElementById('logoutStaff').addEventListener('click', async ()=>{ await api('/api/logout',{method:'POST'}); location.href='/' });
+
+  // load settings
+  async function loadDue(){
+    // read via hidden endpoint: reuse items API to get settings by fetching /api/staff/users? (no). Instead add endpoint to get settings; but to avoid changing server too much, we'll fetch overdue and infer due? We'll call a new endpoint /api/staff/settings (server implements it).
+    try{
+      const s = await api('/api/staff/settings');
+      document.getElementById('currentDue').textContent = s.due_days;
+      document.getElementById('dueDays').value = s.due_days;
+    }catch(e){ console.error(e) }
+  }
+
+  document.getElementById('setDue').addEventListener('click', async ()=>{
+    const days = parseInt(document.getElementById('dueDays').value||'7');
+    await api('/api/staff/settings/due_days',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({days})});
+    alert('変更しました'); loadDue();
+  });
+
+  // items
+  async function loadItems(q=''){
+    const items = await api('/api/items?q=' + encodeURIComponent(q));
+    const tbody = document.querySelector('#itemsTable tbody'); tbody.innerHTML='';
+    for(const it of items){
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${it.id}</td><td>${it.category}</td><td>${it.name}</td><td>${it.total_qty}</td><td>${it.available}</td>
+        <td>
+          <button data-id="${it.id}" class="editBtn">編集</button>
+          <button data-id="${it.id}" class="delBtn">削除</button>
+        </td>`;
+      tbody.appendChild(tr);
+    }
+    document.querySelectorAll('.delBtn').forEach(b=>b.addEventListener('click', async (e)=>{
+      const id = e.target.dataset.id; if(!confirm('削除して良いですか?')) return; await api('/api/staff/items/'+id,{method:'DELETE'}); loadItems(document.getElementById('itemSearch').value);
+    }));
+    document.querySelectorAll('.editBtn').forEach(b=>b.addEventListener('click', async (e)=>{
+      const id = e.target.dataset.id; const row = items.find(x=>x.id==id);
+      const newCat = prompt('カテゴリ', row.category); if(newCat===null) return;
+      const newName = prompt('名前', row.name); if(newName===null) return;
+      const newQty = prompt('合計数', row.total_qty); if(newQty===null) return;
+      await api('/api/staff/items/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:newCat,name:newName,total_qty:parseInt(newQty)})}); loadItems(document.getElementById('itemSearch').value);
+    }));
+  }
+  document.getElementById('itemSearchBtn').addEventListener('click', ()=> loadItems(document.getElementById('itemSearch').value));
+  document.getElementById('addItem').addEventListener('click', async ()=>{
+    const c=document.getElementById('newCategory').value; const n=document.getElementById('newName').value; const q=parseInt(document.getElementById('newQty').value||'1');
+    await api('/api/staff/items/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:[{category:c,name:n,total_qty:q}]})});
+    loadItems();
+  });
+  document.getElementById('bulkAdd').addEventListener('click', async ()=>{
+    const txt = document.getElementById('bulkJson').value; try{ const arr = JSON.parse(txt); await api('/api/staff/items/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:arr})}); document.getElementById('bulkMsg').textContent='追加完了'; loadItems(); }catch(e){ document.getElementById('bulkMsg').textContent='JSON エラー'; }
+  });
+
+  // history
+  async function loadHistory(q='', page=1){
+    const res = await api('/api/staff/history?q='+encodeURIComponent(q)+'&page='+page);
+    const tbody = document.querySelector('#histTable tbody'); tbody.innerHTML='';
+    res.rows.forEach(r=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.id}</td><td>${new Date(r.borrowed_at).toLocaleString()}</td><td>${r.item_name||''}</td><td>${r.qty}</td><td>${r.borrower_name||''}</td><td>${r.due_at?new Date(r.due_at).toLocaleDateString():''}</td><td>${r.returned_at?r.returned_at:''}</td>`; tbody.appendChild(tr); });
+    const sel = document.getElementById('histPage'); sel.innerHTML='';
+    const pages = Math.ceil(res.total / res.pageSize);
+    for(let i=1;i<=pages;i++){ const o=document.createElement('option'); o.value=i; o.text=i; if(i===res.page) o.selected=true; sel.appendChild(o); }
+  }
+  document.getElementById('histSearchBtn').addEventListener('click', ()=> loadHistory(document.getElementById('histSearch').value,1));
+  document.getElementById('histPage').addEventListener('change', ()=> loadHistory(document.getElementById('histSearch').value, parseInt(document.getElementById('histPage').value)));
+
+  // overdue
+  document.getElementById('loadOverdue').addEventListener('click', async ()=>{
+    const rows = await api('/api/staff/overdue'); const tbody=document.querySelector('#overdueTable tbody'); tbody.innerHTML='';
+    rows.forEach(r=>{ const due=new Date(r.due_at); const diff=Math.ceil((new Date()-due)/(1000*60*60*24)); const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.id}</td><td>${r.item_name}</td><td>${r.borrower_name}</td><td>${due.toLocaleDateString()}</td><td>${diff}日</td>`; tbody.appendChild(tr); });
+  });
+
+  // users list & bulk add
+  async function loadUsers(){ const rows = await api('/api/staff/users'); const tbody=document.querySelector('#usersTable tbody'); tbody.innerHTML='';
+    rows.forEach(u=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${u.id}</td><td>${u.name}</td><td>${u.email}</td><td>${u.is_staff? 'yes':'no'}</td><td><button data-id="${u.id}" class="delUser">削除</button></td>`; tbody.appendChild(tr); });
+    document.querySelectorAll('.delUser').forEach(b=>b.addEventListener('click', async (e)=>{ if(!confirm('削除しますか?')) return; await api('/api/staff/users/'+e.target.dataset.id,{method:'DELETE'}); loadUsers(); }));
+  }
+  document.getElementById('bulkUsersAdd').addEventListener('click', async ()=>{
+    const txt=document.getElementById('bulkUsers').value.trim(); if(!txt) return; const lines=txt.split('').map(l=>l.trim()).filter(Boolean);
+    const items=[];
+    for(const l of lines){ const parts=l.split(',').map(p=>p.trim()); if(parts.length<3) continue; items.push({name:parts[0], email:parts[1], pin:parts[2]}); }
+    await api('/api/staff/borrowers/bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({users:items})}); alert('追加完了'); loadUsers();
+  });
+
+  // top items
+  document.getElementById('loadTop').addEventListener('click', async ()=>{
+    const arr = await api('/api/staff/top_items'); const ol=document.getElementById('topList'); ol.innerHTML=''; arr.forEach(a=>{ const li=document.createElement('li'); li.textContent=`${a.name} (貸出回数: ${a.count})`; ol.appendChild(li); });
+  });
+
+  // 初期ロード
+  (async ()=>{ await loadDue(); await loadItems(); await loadHistory('',1); await loadUsers(); })();
+</script>
+</body>
+</html>`;
+
+// 起動時に public フォルダへファイル書き出し（簡易）
+if (!fs.existsSync(path.join(__dirname, 'public'))) fs.mkdirSync(path.join(__dirname, 'public'));
+fs.writeFileSync(path.join(__dirname, 'public','index.html'), indexHtml);
+fs.writeFileSync(path.join(__dirname, 'public','staff.html'), staffHtml);

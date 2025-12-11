@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>返却ページ</title>
+  <link rel="stylesheet" href="styles.css">
+
+</head>
+<body>
+<div class="header">
+  <button onclick="location.href='staff_menu.html'" class="staff-only">〇執管理メニューへ戻る</button>
+  <h1>返却</h1>
+  <button id="logoutBtn">ログアウト</button>
+</div>
+
+<table id="loansTable">
+  <thead>
+    <tr>
+      <th>返却</th>
+      <th>部屋</th>
+      <th>借りた人</th>
+      <th>物品</th>
+      <th>個数</th>
+      <th>〇執対応者</th>
+      <th>貸出日時</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<button id="returnBtn">返却する</button>
+
+<br>
+<div class="footer">
+  <button onclick="location.href='lend.html'",justify-content="space-between">貸出ページ</button>
+</div>
+
+<script>
+
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    const res = await fetch("/logout", { method: "POST" });
+
+    if (res.ok) {
+      window.location.href = "/login.html"; // ← ログイン画面に戻る
+    } else {
+      alert("ログアウトに失敗しました");
+    }
+  });
+
+async function showStaffButtons() {
+  const res = await fetch("/api/me");
+  const me = await res.json();
+
+  // me.is_staff が true の場合だけ表示
+  if (me.is_staff) {
+    document.querySelectorAll(".staff-only").forEach(el => {
+      el.style.display = "inline-block";  // または "block"
+    });
+  }
+}
+window.addEventListener("DOMContentLoaded", showStaffButtons);
+
+// --------------------------------------------------
+// 未返却データ読み込み（チェックボックス + 複数選択対応）
+// --------------------------------------------------
+async function loadUnreturned() {
+  const res = await fetch("/api/loans/unreturned");
+  const data = await res.json();
+
+  const tbody = document.querySelector("#loansTable tbody");
+  tbody.innerHTML = "";
+
+  data.loans.forEach(row => {
+    const tr = document.createElement("tr");
+    tr.dataset.id = row.id;
+
+    tr.innerHTML = `
+      <td><input type="checkbox" class="row-check"></td>
+      <td>${row.room}</td>
+      <td>${row.userName}</td>
+      <td>${row.itemName}</td>
+      <td>${row.qty}</td>
+      <td>${row.lenderName}</td>
+      <td>${row.borrowed_at}</td>
+    `;
+
+    const checkbox = tr.querySelector(".row-check");
+
+    // チェック状態で背景色切替
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        tr.classList.add("selected");
+      } else {
+        tr.classList.remove("selected");
+      }
+    });
+
+    tbody.appendChild(tr);
+  });
+}
+
+// --------------------------------------------------
+// 複数返却API呼び出し
+// --------------------------------------------------
+document.getElementById("returnBtn").addEventListener("click", async () => {
+  const selected = [...document.querySelectorAll(".row-check:checked")];
+
+  if (selected.length === 0) {
+    alert("返却する行を選択してください（複数可）");
+    return;
+  }
+
+  const ids = selected.map(chk => chk.closest("tr").dataset.id);
+
+  const res = await fetch("/api/loans/return/bulk", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids })
+  });
+
+  const data = await res.json();
+
+  if (data.ok) {
+    alert("返却しました！");
+    loadUnreturned();
+  } else {
+    alert("エラー: " + data.error);
+  }
+});
+
+// 初期ロード
+loadUnreturned();
+</script>
+
+</body>
+</html>

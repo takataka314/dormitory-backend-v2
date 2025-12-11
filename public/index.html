@@ -1,0 +1,232 @@
+const indexHtml = `<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>貸出システム - 利用</title>
+<style>
+  body{font-family:system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; padding:12px;}
+  .row{display:flex; gap:8px; margin-bottom:8px;}
+  input,select,button{padding:8px; font-size:16px;}
+  button{cursor:pointer}
+</style>
+</head>
+<body>
+<h2>貸出 / 返却</h2>
+<div id="auth">
+  <h3>ログイン</h3>
+  <input id="email" placeholder="メール" />
+  <input id="pin" placeholder="4桁PIN" maxlength="4" />
+  <button id="login">ログイン</button>
+  <div>
+    <h4>新規登録</h4>
+    <input id="rname" placeholder="名前" />
+    <input id="remail" placeholder="メール" />
+    <input id="rpin" placeholder="4桁PIN" maxlength="4" />
+    <button id="register">登録</button>
+  </div>
+</div>
+
+<div id="main" style="display:none">
+  <div>ログイン中: <span id="who"></span> <button id="logout">ログアウト</button></div>
+  <hr />
+  <h3>借りる</h3>
+  <div class="row">
+    <input id="room" placeholder="部屋名" />
+    <select id="borrowerSelect"></select>
+  </div>
+  <div class="row">
+    <select id="categoryFilter"></select>
+    <select id="itemSelect" name="item_id" required class="w-full p-2 border rounded"></select>
+<script>
+// B: カテゴリごとにグルーピング + Top10 を先頭に表示
+async function loadItemsWithGrouping() {
+  const itemSelect = document.getElementById('itemSelect');
+  itemSelect.innerHTML = '';
+
+  // Top10 を取得
+  const topRes = await fetch('/top_items');
+  const topItems = await topRes.json();
+
+  if (topItems.length > 0) {
+    const og = document.createElement('optgroup');
+    og.label = 'よく貸し出される物品 (Top10)';
+    topItems.forEach(i => {
+      const op = document.createElement('option');
+      op.value = i.id;
+      op.textContent = i.name;
+      og.appendChild(op);
+    });
+    itemSelect.appendChild(og);
+  }
+
+  // 通常アイテムをカテゴリ別で取得
+  const res = await fetch('/items_with_category'); // Flask で新規実装が必要
+  const data = await res.json();
+  // data: { category_name: [{id, name}, ...], ... }
+
+  for (const [cat, items] of Object.entries(data)) {
+    const og = document.createElement('optgroup');
+    og.label = cat;
+    items.forEach(i => {
+      const op = document.createElement('option');
+      op.value = i.id;
+      op.textContent = i.name;
+      og.appendChild(op);
+    });
+    itemSelect.appendChild(og);
+  }
+}
+
+window.addEventListener('DOMContentLoaded', loadItemsWithGrouping);
+</script>
+    <input id="qty" type="number" value="1" min="1" style="width:80px;" />
+  </div>
+  <div class="row">
+    <input id="fromWhom" placeholder="誰から借りたか" />
+    <button id="doBorrow">借りる</button>
+  </div>
+  <hr />
+  <h3>返却</h3>
+  <select id="activeBorrowSelect"></select>
+  <button id="doReturn">返却する</button>
+  <hr />
+  <h3>アイテム検索</h3>
+  <input id="searchItem" placeholder="検索" /> <button id="searchBtn">検索</button>
+  <ul id="itemsList"></ul>
+</div>
+
+<script>
+  async function api(path, opt){
+    const r = await fetch(path, opt);
+    if (r.ok) return r.json();
+    const err = await r.json();
+    alert(err.error || 'エラー');
+    throw new Error(err.error);
+  }
+
+  document.getElementById('register').addEventListener('click', async ()=>{
+    const name = document.getElementById('rname').value;
+    const email = document.getElementById('remail').value;
+    const pin = document.getElementById('rpin').value;
+    await api('/api/register', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name,email,pin})});
+    alert('登録しました。ログインしてください');
+  });
+
+  document.getElementById('login').addEventListener('click', async ()=>{
+    const email = document.getElementById('email').value;
+    const pin = document.getElementById('pin').value;
+    await api('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email,pin})});
+    document.getElementById('auth').style.display='none';
+    document.getElementById('main').style.display='block';
+    loadMain();
+  });
+
+  document.getElementById('logout').addEventListener('click', async ()=>{
+    await api('/api/logout', {method:'POST'});
+    document.getElementById('auth').style.display='block';
+    document.getElementById('main').style.display='none';
+  });
+
+  async function loadMain(){
+    // 利用者一覧（貸出人選択）
+    const users = await api('/api/staff/users');
+    const s = document.getElementById('borrowerSelect');
+    s.innerHTML = '';
+    users.forEach(u=>{
+      const opt = document.createElement('option'); opt.value = u.id; opt.text = u.name; s.appendChild(opt);
+    });
+    // items
+    await loadItems();
+    await loadActiveBorrows();
+  }
+
+  async function loadItems(q=''){
+    const items = await api('/api/items?q=' + encodeURIComponent(q));
+    const sel = document.getElementById('itemSelect'); sel.innerHTML='';
+    items.forEach(it=>{
+      const opt = document.createElement('option'); opt.value = it.id; opt.text = `${it.category} / ${it.name} (残:${it.available})`; sel.appendChild(opt);
+    });
+    const list = document.getElementById('itemsList'); list.innerHTML='';
+    items.forEach(it=>{ const li = document.createElement('li'); li.textContent = `${it.category} / ${it.name} - 全${it.total_qty} 残${it.available}`; list.appendChild(li); });
+  }
+
+  document.getElementById('searchBtn').addEventListener('click', ()=>{ loadItems(document.getElementById('searchItem').value); });
+
+  document.getElementById('doBorrow').addEventListener('click', async ()=>{
+    const room = document.getElementById('room').value;
+    const borrowerId = document.getElementById('borrowerSelect').value;
+    const itemId = document.getElementById('itemSelect').value;
+    const qty = parseInt(document.getElementById('qty').value || '1');
+    const fromWhom = document.getElementById('fromWhom').value;
+    await api('/api/borrow', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({room,borrowerId,itemId,qty,fromWhom})});
+    alert('貸出完了');
+    loadItems(); loadActiveBorrows();
+  });
+
+  async function loadActiveBorrows(){
+    const rows = await api('/api/active_borrows');
+    const sel = document.getElementById('activeBorrowSelect'); sel.innerHTML='';
+    rows.forEach(r=>{ const opt = document.createElement('option'); opt.value=r.borrow_id; opt.text = `${r.item_name} x${r.qty} - ${r.borrower_name} (期限:${new Date(r.due_at).toLocaleDateString()})`; sel.appendChild(opt); });
+  }
+  document.getElementById('doReturn').addEventListener('click', async ()=>{
+    const id = document.getElementById('activeBorrowSelect').value;
+    await api('/api/return', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({borrowId: id})});
+    alert('返却処理しました'); loadItems(); loadActiveBorrows();
+  });
+
+</script>
+<script>
+// --- 貸出画面：物品プルダウンを Top10 → カテゴリ で再構成 ---
+async function loadItemsWithTop10() {
+  const itemSelect = document.getElementById('itemSelect');
+  if (!itemSelect) return;
+
+  // 全アイテム取得
+  const all = await fetch('/api/items').then(r=>r.json());
+
+  // Top10 取得
+  const top10 = await fetch('/api/staff/top_items').then(r=>r.json()).catch(()=>[]);
+
+  // セレクト初期化
+  itemSelect.innerHTML = '';
+
+  // --- Top10 セクション ---
+  if (top10.length > 0) {
+    const optGroupTop = document.createElement('optgroup');
+    optGroupTop.label = 'よく貸し出されている物品 Top10';
+    top10.forEach(t => {
+      const item = all.find(a=>a.id===t.id);
+      if (!item) return;
+      const op = document.createElement('option');
+      op.value = item.id;
+      op.textContent = `${item.name}（残り${item.quantity}）`;
+      optGroupTop.appendChild(op);
+    });
+    itemSelect.appendChild(optGroupTop);
+  }
+
+  // --- カテゴリごとのグループ ---
+  const categories = {};
+  all.forEach(i => {
+    if (!categories[i.category]) categories[i.category] = [];
+    categories[i.category].push(i);
+  });
+
+  for (const cat of Object.keys(categories)) {
+    const og = document.createElement('optgroup');
+    og.label = cat;
+    categories[cat].forEach(i => {
+      const op = document.createElement('option');
+      op.value = i.id;
+      op.textContent = `${i.name}（残り${i.quantity}）`;
+      og.appendChild(op);
+    });
+    itemSelect.appendChild(og);
+  }
+}
+
+window.addEventListener('DOMContentLoaded', loadItemsWithTop10);
+</script>
+</body>
+</html>`;

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>新規登録</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<h1>新規登録</h1>
+
+<form id="regForm">
+  <label>名前　　　　　　　　：<input id="name" required></label><br>
+  <label>Emailアドレス　　　：<input id="email" required></label><br>
+  <label>パスワード(4桁数字)：<input id="pin" type="password" required></label><br>
+  <button type="submit">登録</button>
+</form>
+
+<p><button onclick="location.href='login.html'">ログインに戻る</button></p>
+
+<script>
+document.getElementById('regForm').addEventListener('submit', async e=>{
+  e.preventDefault();
+
+  const body = {
+    name: document.getElementById('name').value,
+    email: document.getElementById('email').value,
+    pin: document.getElementById('pin').value,
+  };
+
+  const res = await fetch('/api/register',{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body)
+  });
+  const data = await res.json();
+
+  if(data.ok){
+    alert("登録完了！ログインしてください");
+    location.href="login.html";
+  }else{
+    alert("エラー：" + data.error);
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>物品管理</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="header">
+  <button onclick="location.href='staff_menu.html'" class="staff-only">〇執管理メニューへ戻る</button>
+  <h1>物品管理</h1>
+  <button id="logoutBtn">ログアウト</button>
+</div>
+
+<br>
+<!-- 検索欄 -->
+<div style="margin-top:20px;">
+  <input type="text" id="searchInput" placeholder="カテゴリ・物品名・備考を検索" style="width:300px; padding:5px;">
+</div>
+
+<button id="saveAllBtn">一括保存</button>
+
+<table id="itemsTable">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>カテゴリ</th>
+      <th>物品名</th>
+      <th>在庫数</th>
+      <th>備考</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<script>
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    const res = await fetch("/logout", { method: "POST" });
+
+    if (res.ok) {
+      window.location.href = "/login.html"; // ← ログイン画面に戻る
+    } else {
+      alert("ログアウトに失敗しました");
+    }
+  });
+  
+async function showStaffButtons() {
+  const res = await fetch("/api/me");
+  const me = await res.json();
+
+  // me.is_staff が true の場合だけ表示
+  if (me.is_staff) {
+    document.querySelectorAll(".staff-only").forEach(el => {
+      el.style.display = "inline-block";  // または "block"
+    });
+  }
+}
+window.addEventListener("DOMContentLoaded", showStaffButtons);
+
+async function checkStaff() {
+  const res = await fetch("/api/me");
+  const me = await res.json();
+  if (!me.is_staff) {
+    alert("スタッフ専用ページです");
+    window.location.href = "/login.html";
+  }
+}
+checkStaff();
+
+// 修正 loadItems 関数
+async function loadItems() {
+  const res = await fetch("/api/items");
+  const data = await res.json();
+  const tbody = document.querySelector("#itemsTable tbody");
+  tbody.innerHTML = "";
+
+  // 検索文字取得
+  const keyword = document.getElementById("searchInput").value.trim().toLowerCase();
+
+  data.items
+    .filter(item => {
+      if (!keyword) return true;
+      return (
+        (item.category || "").toLowerCase().includes(keyword) ||
+        (item.name || "").toLowerCase().includes(keyword) ||
+        (item.note || "").toLowerCase().includes(keyword)
+      );
+    })
+    .forEach(item => {
+      const tr = document.createElement("tr");
+      tr.dataset.id = item.id;
+
+      tr.innerHTML = `
+        <td>${item.id}</td>
+        <td>${item.category}</td>
+        <td>${item.name}</td>
+        <td>
+          <button class="decBtn">-</button>
+          <input type="number" class="qtyInput" value="${item.total_qty}" min="0" style="width:60px;text-align:center;">
+          <button class="incBtn">+</button>
+        </td>
+        <td><input type="text" class="noteInput" value="${item.note || ''}"></td>
+      `;
+
+      const qtyInput = tr.querySelector(".qtyInput");
+      const noteInput = tr.querySelector(".noteInput");
+
+      function markDirty() { tr.classList.add("unsaved"); }
+
+      tr.querySelector(".incBtn").addEventListener("click", () => { qtyInput.value = Number(qtyInput.value)+1; markDirty(); });
+      tr.querySelector(".decBtn").addEventListener("click", () => { qtyInput.value = Math.max(0, Number(qtyInput.value)-1); markDirty(); });
+
+      qtyInput.addEventListener("input", markDirty);
+      noteInput.addEventListener("input", markDirty);
+
+      tbody.appendChild(tr);
+    });
+}
+
+// 検索入力で即更新
+document.getElementById("searchInput").addEventListener("input", () => {
+  loadItems();
+});
+
+// 一括保存
+document.getElementById("saveAllBtn").addEventListener("click", async () => {
+  const rows = document.querySelectorAll("#itemsTable tbody tr.unsaved");
+  if (rows.length === 0) {
+    alert("変更された行がありません");
+    return;
+  }
+
+  const updates = Array.from(rows).map(tr => ({
+    id: tr.dataset.id,
+    total_qty: Number(tr.querySelector(".qtyInput").value),
+    note: tr.querySelector(".noteInput").value
+  }));
+
+  const res = await fetch("/api/items/update-bulk", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ updates })
+  });
+
+  const data = await res.json();
+
+  if (data.ok) {
+    alert("保存しました");
+    rows.forEach(tr => tr.classList.remove("unsaved"));
+    loadItems();
+  } else {
+    alert("保存に失敗しました: " + data.error);
+  }
+});
+
+// ページ離脱警告
+window.addEventListener("beforeunload", (e) => {
+  if (document.querySelectorAll("tr.unsaved").length > 0) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+
+// 初期ロード
+loadItems();
+</script>
+
+</body>
+</html>

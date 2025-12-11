@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>貸出ページ</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="header">
+  <button onclick="location.href='staff_menu.html'" class="staff-only">〇執管理メニューへ戻る</button>
+  <h1>貸出</h1>
+  <button id="logoutBtn">ログアウト</button>
+</div>
+
+<form id="lendForm">
+  <label>部屋名：
+    <input type="text" id="roomInput" required placeholder="例: A1外">
+  </label><br>
+
+  <label>物品：
+    <select id="itemSelect" required></select>
+  </label><br>
+
+  <label>数量：
+    <select id="qtySelect" required></select>
+  </label><br>
+
+  <label>〇執対応者：
+    <select id="fromSelect" required></select>
+  </label><br><br>
+
+  <button type="submit">貸出</button>
+
+</form>
+<div class="footer">
+  <button onclick="location.href='return.html'" justify-content="space-between">返却ページ</button>
+</div>
+
+
+
+<script>
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    const res = await fetch("/logout", { method: "POST" });
+
+    if (res.ok) {
+      window.location.href = "/login.html"; // ← ログイン画面に戻る
+    } else {
+      alert("ログアウトに失敗しました");
+    }
+  });
+
+async function showStaffButtons() {
+  const res = await fetch("/api/me");
+  const me = await res.json();
+
+  // me.is_staff が true の場合だけ表示
+  if (me.is_staff) {
+    document.querySelectorAll(".staff-only").forEach(el => {
+      el.style.display = "inline-block";  // または "block"
+    });
+  }
+}
+window.addEventListener("DOMContentLoaded", showStaffButtons);
+
+// ---------- アイテム & 貸出人ロード ----------
+async function loadData() {
+  // items
+  const itemsRes = await fetch('/api/items');
+  const items = await itemsRes.json();
+
+  const itemSelect = document.getElementById('itemSelect');
+  itemSelect.innerHTML = '';
+
+  items.items.filter(i=>i.available>0).forEach(i=>{
+    const opt = document.createElement('option');
+    opt.value = i.id;
+    opt.textContent = `${i.category} - ${i.name}（残:${i.available}）`;
+    opt.dataset.available = i.available;
+    itemSelect.appendChild(opt);
+  });
+  updateQtyOptions();
+
+  // lenders
+  const lendersRes = await fetch('/api/lenders');
+  const lendersData = await lendersRes.json();
+
+  const fromSelect = document.getElementById('fromSelect');
+  fromSelect.innerHTML = '';
+
+  lendersData.lenders.forEach(l=>{
+    const opt = document.createElement('option');
+    opt.value = l.id;
+    opt.textContent = l.name;
+    fromSelect.appendChild(opt);
+  });
+}
+
+function updateQtyOptions() {
+  const itemSelect = document.getElementById('itemSelect');
+  const qtySelect = document.getElementById('qtySelect');
+  qtySelect.innerHTML = "";
+
+  const available = parseInt(itemSelect.selectedOptions[0].dataset.available);
+  for(let i=1;i<=available;i++){
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = i;
+    qtySelect.appendChild(opt);
+  }
+}
+
+document.getElementById('itemSelect').addEventListener('change', updateQtyOptions);
+
+// ---------- 貸出処理 ----------
+document.getElementById('lendForm').addEventListener('submit', async e=>{
+  e.preventDefault();
+
+  const body = {
+    item_id: Number(document.getElementById('itemSelect').value),
+    qty: Number(document.getElementById('qtySelect').value),
+    lender_id: Number(document.getElementById('fromSelect').value),
+    room: document.getElementById('roomInput').value
+  };
+
+  const res = await fetch('/api/loans',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  });
+  const data = await res.json();
+
+  if(data.ok){
+    alert("貸出しました！");
+    loadData();
+  }else{
+    alert(data.error);
+  }
+});
+
+// 初期ロード
+loadData();
+</script>
+</body>
+</html>
