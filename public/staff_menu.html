@@ -20,7 +20,6 @@
   <li><button onclick="location.href='history.html'">履歴一覧</button></li>
 </ul>
 <script>
-
   async function checkStaff() {
     const res = await fetch("/api/me");
     const me = await res.json();
