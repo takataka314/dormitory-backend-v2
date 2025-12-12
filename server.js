@@ -13,7 +13,7 @@ import { Readable } from "stream";
 import { fileURLToPath } from "url";
 
 import { pool, initDb, hashPin } from "./models/db.js";
-
+const PORT = process.env.PORT || 8080;
 // ---------------------------------------------------------
 // ES Modules 用 __dirname
 // ---------------------------------------------------------
@@ -608,7 +608,7 @@ app.post("/api/lenders/upload", upload.single("file"), (req, res) => {
 //---------------------------------------------------------
 // サーバー起動
 //---------------------------------------------------------
-const PORT = process.env.PORT || 8080;
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
