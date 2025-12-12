@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>〇執管理メニュー</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="header">
+  <h1>〇執管理メニュー</h1>
+  <button id="logoutBtn">ログアウト</button>
+</div>
+
+<ul>
+  <li><button onclick="location.href='lend.html'">貸出</button></li>
+  <li><button onclick="location.href='return.html'">返却</button></li>
+  <li><button onclick="location.href='add_items.html'">物品追加</button></li>
+  <li><button onclick="location.href='items_ope.html'">物品在庫管理</button></li>
+  <li><button onclick="location.href='lenders.html'">〇執対応者管理</button></li>
+  <li><button onclick="location.href='history.html'">履歴一覧</button></li>
+</ul>
+<script>
+  async function checkStaff() {
+    const res = await fetch("/api/me");
+    const me = await res.json();
+    if (!me.is_staff) {
+      alert("スタッフ専用ページです");
+      window.location.href = "/login.html";
+    }
+  }
+  checkStaff();
+  
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    const res = await fetch("/logout", { method: "POST" });
+
+    if (res.ok) {
+      window.location.href = "/login.html"; // ← ログイン画面に戻る
+    } else {
+      alert("ログアウトに失敗しました");
+    }
+  });
+</script>
+</body>
+</html>

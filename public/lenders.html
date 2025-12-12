@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>〇執対応者管理</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="header">
+  <button onclick="location.href='staff_menu.html'" class="staff-only">〇執管理メニューへ戻る</button>
+  <h1>〇執対応者管理</h1>
+  <button id="logoutBtn">ログアウト</button>
+</div>
+
+
+<h2>CSVアップロード</h2>
+<form id="uploadForm">
+  <input type="file" name="file" accept=".csv" required>
+  <button type="submit">アップロード</button>
+</form>
+
+<h2>登録済み 〇執対応者一覧</h2>
+<ul id="lenderList"></ul>
+
+<script>
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    const res = await fetch("/logout", { method: "POST" });
+
+    if (res.ok) {
+      window.location.href = "/login.html"; // ← ログイン画面に戻る
+    } else {
+      alert("ログアウトに失敗しました");
+    }
+  });
+  
+async function showStaffButtons() {
+  const res = await fetch("/api/me");
+  const me = await res.json();
+
+  // me.is_staff が true の場合だけ表示
+  if (me.is_staff) {
+    document.querySelectorAll(".staff-only").forEach(el => {
+      el.style.display = "inline-block";  // または "block"
+    });
+  }
+}
+window.addEventListener("DOMContentLoaded", showStaffButtons);
+
+async function checkStaff() {
+  const res = await fetch("/api/me");
+  const me = await res.json();
+  if (!me.is_staff) {
+    alert("スタッフ専用ページです");
+    window.location.href = "/login.html";
+  }
+}
+checkStaff();
+// 一覧読み込み
+async function loadLenders() {
+  const res = await fetch('/api/lenders');
+  const data = await res.json();
+
+  const ul = document.getElementById("lenderList");
+  ul.innerHTML = "";
+
+  data.lenders.forEach(l => {
+    const li = document.createElement("li");
+    li.textContent = l.name;
+    ul.appendChild(li);
+  });
+}
+
+loadLenders();
+
+// CSVアップロード
+document.getElementById("uploadForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const formData = new FormData(e.target);
+
+  const res = await fetch("/api/lenders/upload", {
+    method: "POST",
+    body: formData
+  });
+  const data = await res.json();
+
+  if (data.ok) {
+    alert(`${data.count} 件を追加しました`);
+    loadLenders();
+  } else {
+    alert("エラー: " + data.error);
+  }
+});
+</script>
+</body>
+</html>

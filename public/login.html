@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ログイン</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<h1>ログイン</h1>
+
+<form id="loginForm">
+  <label>名前　　　　　　　　：
+    <select id="nameSelect" required></select>
+  </label><br>
+
+  <label>パスワード (4桁数字)：
+    <input type="password" id="pin" required>
+  </label><br>
+
+  <button type="submit">ログイン</button>
+</form>
+
+
+<p><button onclick="location.href='register.html'">新規登録はこちら</button></p>
+
+<script>
+async function loadLoginNames() {
+  const res = await fetch('/api/login-names');
+  const data = await res.json();
+
+  const select = document.getElementById('nameSelect');
+  select.innerHTML = '';
+
+  data.names.forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = u.id;  // PostgreSQL: id は SERIAL
+    opt.textContent = u.name + (u.type === 'staff' ? '（スタッフ）' : '');
+    select.appendChild(opt);
+  });
+}
+loadLoginNames();
+
+document.getElementById('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const name = document.getElementById('nameSelect').value;
+  const pin = document.getElementById('pin').value;
+
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, pin })
+  });
+  const data = await res.json();
+
+  if (data.ok) {
+    if (data.role === "staff") {
+      location.href = "staff_menu.html";
+    } else {
+      location.href = "lend.html";
+    }
+  } else {
+    alert(data.error);
+  }
+});
+</script>

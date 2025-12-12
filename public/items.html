@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>物品一覧</title>
+  <link rel="stylesheet" href="styles.css">
+
+</head>
+<body>
+<div class="header">
+  <button onclick="location.href='staff_menu.html'" class="staff-only">〇執管理メニューへ戻る</button>
+  <h1>物品一覧（現在の状態）</h1>
+  <button id="logoutBtn">ログアウト</button>
+</div>
+
+  <table>
+    <thead>
+      <tr>
+        <!-- <th>ID</th> -->
+        <th>物品名</th>
+        <th>状態</th>
+        <th>借りた人</th>
+        <th>借りた日時</th>
+        <th>返却日時</th>
+      </tr>
+    </thead>
+    <tbody id="items-table"></tbody>
+  </table>
+
+  
+
+<script>
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    const res = await fetch("/logout", { method: "POST" });
+
+    if (res.ok) {
+      window.location.href = "/login.html"; // ← ログイン画面に戻る
+    } else {
+      alert("ログアウトに失敗しました");
+    }
+  });
+  
+async function showStaffButtons() {
+  const res = await fetch("/api/me");
+  const me = await res.json();
+
+  // me.is_staff が true の場合だけ表示
+  if (me.is_staff) {
+    document.querySelectorAll(".staff-only").forEach(el => {
+      el.style.display = "inline-block";  // または "block"
+    });
+  }
+}
+window.addEventListener("DOMContentLoaded", showStaffButtons);
+
+async function checkStaff() {
+  const res = await fetch("/api/me");
+  const me = await res.json();
+  if (!me.is_staff) {
+    alert("スタッフ専用ページです");
+    window.location.href = "/login.html";
+  }
+}
+checkStaff();
+
+  async function loadItems() {
+    const res = await fetch('/api/items_status');
+    if (!res.ok) {
+      alert("データ取得に失敗しました");
+      return;
+    }
+    const data = await res.json();
+    const tbody = document.getElementById('items-table');
+
+    tbody.innerHTML = "";
+
+    data.items.forEach(item => {
+      const tr = document.createElement('tr');
+
+      tr.innerHTML = `
+        <td>${item.name}</td>
+        <td>${item.is_borrowed ? "貸出中" : "未貸出"}</td>
+        <td>${item.borrower_name ?? ""}</td>
+        <td>${item.borrowed_at ?? ""}</td>
+        <td>${item.returned_at ?? ""}</td>
+      `;
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  loadItems();
+</script>
+
+</body>
+</html>

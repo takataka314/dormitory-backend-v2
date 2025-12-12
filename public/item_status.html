@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>物品状態一覧（スタッフ用）</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    h1 { margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background: #f0f0f0; }
+    .borrowed { background: #ffe8e8; }
+    .returned { background: #e8ffe8; }
+    .search-box { margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <h1>物品の状態一覧（スタッフ用）</h1>
+
+  <div class="search-box">
+    <input type="text" id="searchInput" placeholder="物品名・利用者名で検索" style="width:300px; padding:5px; font-size:16px;">
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>物品名</th>
+        <th>状態</th>
+        <th>借りている人</th>
+        <th>借りた日時</th>
+        <th>返却日時</th>
+      </tr>
+    </thead>
+    <tbody id="itemStatusBody"></tbody>
+  </table>
+<a href="/staff_menu.html" class="back-btn">スタッフメニューへ戻る</a>
+<script>
+async function loadStatus() {
+  const res = await fetch('/api/staff/item_status');
+  const data = await res.json();
+  const body = document.getElementById('itemStatusBody');
+  body.innerHTML = '';
+
+  data.forEach(row => {
+    const tr = document.createElement('tr');
+    tr.className = row.returned_at ? 'returned' : (row.borrowed_at ? 'borrowed' : '');
+
+    tr.innerHTML = `
+      <td>${row.item_name}</td>
+      <td>${row.borrowed_at && !row.returned_at ? '貸出中' : '在庫'}</td>
+      <td>${row.user_name || ''}</td>
+      <td>${row.borrowed_at || ''}</td>
+      <td>${row.returned_at || ''}</td>
+    `;
+
+    body.appendChild(tr);
+  });
+}
+
+// search filter
+const searchInput = document.getElementById('searchInput');
+searchInput.addEventListener('keyup', () => {
+  const filter = searchInput.value.toLowerCase();
+  const rows = document.querySelectorAll('#itemStatusBody tr');
+  rows.forEach(r => {
+    const text = r.innerText.toLowerCase();
+    r.style.display = text.includes(filter) ? '' : 'none';
+  });
+});
+
+loadStatus();
+</script>
+</body>
+</html>

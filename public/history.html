@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>貸出・返却履歴一覧</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body onload="loadHistory()">
+<div class="header">
+  <button onclick="location.href='staff_menu.html'" class="staff-only">〇執管理メニューへ戻る</button>
+  <h2>貸出・返却履歴一覧（スタッフ専用）</h2>
+  <button id="logoutBtn">ログアウト</button>
+</div>
+
+  <!-- ▼ 検索欄・表示切替 UI -->
+  <div class="search-box">
+    <input type="text" id="searchInput" placeholder="検索（部屋・物品・借りた人）" style="width:300px;">
+    <label>
+      <input type="checkbox" id="onlyNotReturned" checked> 未返却のみ表示
+    </label>
+    <button type="button" onclick="loadHistory()">検索</button>
+
+  </div>
+
+  <table id="historyTable">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>物品</th>
+        <th>カテゴリ</th>
+        <th>借りた人</th>
+        <th>個数</th>
+        <th>部屋</th>
+        <th>貸出日時</th>
+        <th>返却日時</th>
+        <th>対応スタッフ</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    const res = await fetch("/logout", { method: "POST" });
+
+    if (res.ok) {
+      window.location.href = "/login.html"; // ← ログイン画面に戻る
+    } else {
+      alert("ログアウトに失敗しました");
+    }
+  });
+  
+    async function showStaffButtons() {
+    const res = await fetch("/api/me");
+    const me = await res.json();
+
+    // me.is_staff が true の場合だけ表示
+    if (me.is_staff) {
+        document.querySelectorAll(".staff-only").forEach(el => {
+        el.style.display = "inline-block";  // または "block"
+        });
+    }
+    }
+    window.addEventListener("DOMContentLoaded", showStaffButtons);
+
+    async function checkStaff() {
+    const res = await fetch("/api/me");
+    const me = await res.json();
+    if (!me.is_staff) {
+        alert("スタッフ専用ページです");
+        window.location.href = "/login.html";
+    }
+    }
+    checkStaff();
+
+    async function loadHistory() {
+      const q = document.getElementById("searchInput").value;
+      const onlyNot = document.getElementById("onlyNotReturned").checked;
+
+      const res = await fetch(`/api/history?q=${encodeURIComponent(q)}&onlyNot=${onlyNot ? 1 : 0}`);
+      const list = await res.json();
+
+      const tbody = document.querySelector("#historyTable tbody");
+      tbody.innerHTML = "";
+
+      list.forEach(r => {
+        const tr = document.createElement("tr");
+
+        tr.innerHTML = `
+          <td>${r.id}</td>
+          <td>${r.item_name}</td>
+          <td>${r.category}</td>
+          <td>${r.lender_name}</td>
+          <td>${r.qty}</td>
+          <td>${r.room}</td>
+          <td>${r.borrowed_at}</td>
+          <td class="${r.returned_at ? "returned" : "not-returned"}">
+            ${r.returned_at || "未返却"}
+          </td>
+          <td>${r.staff_name || "-"}</td>
+        `;
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    // 初期ロード
+    loadHistory();
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>物品追加</title>
+  <link rel="stylesheet" href="styles.css">
+
+</head>
+<body>
+<div class="header">
+  <button onclick="location.href='staff_menu.html'" class="staff-only">〇執管理メニューへ戻る</button>
+  <h1>物品追加（CSV / Excel）</h1>
+  <button id="logoutBtn">ログアウト</button>
+</div>
+
+<br>
+<button class="btn" onclick="uploadItems()">以下の内容を追加する</button>
+<br>
+
+<input type="file" id="fileInput" accept=".csv, .xlsx">
+<button class="btn" onclick="loadFile()">読み込む</button>
+
+<h2>読み込み結果</h2>
+<table id="previewTable"></table>
+
+<script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+
+<script>
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    const res = await fetch("/logout", { method: "POST" });
+
+    if (res.ok) {
+      window.location.href = "/login.html"; // ← ログイン画面に戻る
+    } else {
+      alert("ログアウトに失敗しました");
+    }
+  });
+  
+async function showStaffButtons() {
+  const res = await fetch("/api/me");
+  const me = await res.json();
+
+  // me.is_staff が true の場合だけ表示
+  if (me.is_staff) {
+    document.querySelectorAll(".staff-only").forEach(el => {
+      el.style.display = "inline-block";  // または "block"
+    });
+  }
+}
+
+window.addEventListener("DOMContentLoaded", showStaffButtons);
+
+async function checkStaff() {
+  const res = await fetch("/api/me");
+  const me = await res.json();
+  if (!me.is_staff) {
+    alert("スタッフ専用ページです");
+    window.location.href = "/login.html";
+  }
+}
+checkStaff();
+
+let parsedData = [];
+
+// CSV / XLSX 読み込み
+function loadFile() {
+  const file = document.getElementById("fileInput").files[0];
+  if (!file) {
+    alert("ファイルを選択してください");
+    return;
+  }
+
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    const data = e.target.result;
+    let workbook;
+
+    if (file.name.endsWith(".xlsx")) {
+      workbook = XLSX.read(new Uint8Array(data), { type: "array" });
+    } else {
+      workbook = XLSX.read(data, { type: "string" });
+    }
+
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    displayData(json);
+  };
+
+  if (file.name.endsWith(".xlsx")) {
+    reader.readAsArrayBuffer(file);
+  } else {
+    reader.readAsText(file);
+  }
+}
+
+// 表示
+function displayData(rows) {
+  parsedData = [];
+
+  const table = document.getElementById("previewTable");
+  table.innerHTML = "";
+
+  // 必須列：カテゴリー / 物品名 / 個数
+  const header = `<tr><th>カテゴリー</th><th>物品名</th><th>個数</th></tr>`;
+  table.insertAdjacentHTML("beforeend", header);
+
+  rows.slice(1).forEach(row => {
+    if (row.length < 3) return;
+
+    const [category, name, qty] = row;
+
+    parsedData.push({ category, name, qty });
+
+    table.insertAdjacentHTML(
+      "beforeend",
+      `<tr><td>${category}</td><td>${name}</td><td>${qty}</td></tr>`
+    );
+  });
+
+  if (parsedData.length === 0) {
+    alert("データが読み込めませんでした。");
+  }
+}
+
+// --- DBへ追加 ---
+async function uploadItems() {
+  if (parsedData.length === 0) {
+    alert("先にファイルを読み込んでください");
+    return;
+  }
+
+  const res = await fetch("/api/items/bulk", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items: parsedData })
+  });
+
+  const data = await res.json();
+
+  if (data.ok) {
+    alert("追加が完了しました！");
+  } else {
+    alert("エラー: " + data.error);
+  }
+}
+</script>
+
+</body>
+</html>

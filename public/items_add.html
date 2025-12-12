@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>物品一括追加</title>
+<style>
+body { font-family: Arial; padding: 20px; }
+input, select { padding: 6px; margin-right: 10px; margin-bottom: 10px; }
+button { padding: 6px 12px; }
+#itemsList { margin-top: 20px; }
+</style>
+</head>
+<body>
+
+<h1>物品追加ページ（スタッフ専用）</h1>
+
+<div>
+  <input type="text" id="category" placeholder="カテゴリー">
+  <input type="text" id="name" placeholder="物品名">
+  <input type="number" id="stock" placeholder="個数" min="1">
+  <button onclick="addItemToList()">リストに追加</button>
+</div>
+
+<h3>追加予定リスト</h3>
+<table border="1" id="itemsList">
+  <thead>
+    <tr>
+      <th>カテゴリー</th>
+      <th>物品名</th>
+      <th>個数</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<button onclick="submitItems()">一括追加</button>
+
+<a href="/staff_menu.html">スタッフメニューへ戻る</a>
+
+<script>
+const itemsToAdd = [];
+
+function addItemToList() {
+  const category = document.getElementById('category').value.trim();
+  const name = document.getElementById('name').value.trim();
+  const stock = parseInt(document.getElementById('stock').value);
+
+  if (!category || !name || !stock || stock <= 0) {
+    alert('全て正しく入力してください');
+    return;
+  }
+
+  const item = { category, name, stock };
+  itemsToAdd.push(item);
+
+  const tbody = document.querySelector('#itemsList tbody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td>${category}</td>
+    <td>${name}</td>
+    <td>${stock}</td>
+    <td><button onclick="removeItem(${itemsToAdd.length-1})">削除</button></td>
+  `;
+  tbody.appendChild(tr);
+
+  // 入力欄クリア
+  document.getElementById('category').value = '';
+  document.getElementById('name').value = '';
+  document.getElementById('stock').value = '';
+}
+
+function removeItem(index) {
+  itemsToAdd.splice(index, 1);
+  renderItems();
+}
+
+function renderItems() {
+  const tbody = document.querySelector('#itemsList tbody');
+  tbody.innerHTML = '';
+  itemsToAdd.forEach((item, idx) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${item.category}</td>
+      <td>${item.name}</td>
+      <td>${item.stock}</td>
+      <td><button onclick="removeItem(${idx})">削除</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+async function submitItems() {
+  if (itemsToAdd.length === 0) {
+    alert('追加する物品がありません');
+    return;
+  }
+
+  for (const item of itemsToAdd) {
+    const res = await fetch('/api/items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item)
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      alert(`追加失敗: ${item.name}`);
+    }
+  }
+
+  alert('追加完了');
+  itemsToAdd.length = 0;
+  renderItems();
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>貸出・返却履歴一覧</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="header">
+  <button onclick="location.href='staff_menu.html'" class="staff-only">〇執管理メニューへ戻る</button>
+  <h1>貸出・返却履歴一覧</h1>
+  <button id="logoutBtn">ログアウト</button>
+</div>
+    <button id="csv-btn">CSVダウンロード</button>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>物品名</th>
+        <th>借りた人</th>
+        <th>貸出日時</th>
+        <th>返却日時</th>
+        <th>状態</th>
+      </tr>
+    </thead>
+    <tbody id="loans-table"></tbody>
+  </table>
+
+  <script>
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    const res = await fetch("/logout", { method: "POST" });
+
+    if (res.ok) {
+      window.location.href = "/login.html"; // ← ログイン画面に戻る
+    } else {
+      alert("ログアウトに失敗しました");
+    }
+  });
+  
+  async function showStaffButtons() {
+    const res = await fetch("/api/me");
+    const me = await res.json();
+
+    // me.is_staff が true の場合だけ表示
+    if (me.is_staff) {
+      document.querySelectorAll(".staff-only").forEach(el => {
+        el.style.display = "inline-block";  // または "block"
+      });
+    }
+  }
+  window.addEventListener("DOMContentLoaded", showStaffButtons);
+
+  async function checkStaff() {
+    const res = await fetch("/api/me");
+    const me = await res.json();
+    if (!me.is_staff) {
+      alert("スタッフ専用ページです");
+      window.location.href = "/login.html";
+    }
+  }
+  checkStaff();
+
+    document.getElementById("csv-btn").addEventListener("click", () => {
+    window.location.href = "/api/loans_csv";
+    });
+    async function loadLoans() {
+      const res = await fetch('/api/loans_all');
+      if (!res.ok) {
+        alert("履歴の取得に失敗しました");
+        return;
+      }
+
+      const data = await res.json();
+      const tbody = document.getElementById('loans-table');
+      tbody.innerHTML = "";
+
+      data.loans.forEach(l => {
+        const tr = document.createElement('tr');
+
+        const status = l.returned_at ? 
+          `<span class="status returned">返却済</span>` : 
+          `<span class="status in-use">貸出中</span>`;
+
+        tr.innerHTML = `
+          <td>${l.id}</td>
+          <td>${l.item_name}</td>
+          <td>${l.user_name}</td>
+          <td>${l.borrowed_at}</td>
+          <td>${l.returned_at ?? ""}</td>
+          <td>${status}</td>
+        `;
+
+        tbody.appendChild(tr);
+      });
+    }
+    
+
+    loadLoans();
+  </script>
+
+</body>
+</html>
