@@ -2,95 +2,136 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>〇執対応者管理</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+
 <div class="header">
-  <button onclick="location.href='staff_menu.html'" class="staff-only">〇執管理メニューへ戻る</button>
+  <button
+    onclick="location.href='staff_menu.html'"
+    class="staff-only"
+    style="display:none">
+    〇執管理メニューへ戻る
+  </button>
   <h1>〇執対応者管理</h1>
   <button id="logoutBtn">ログアウト</button>
 </div>
 
-
 <h2>CSVアップロード</h2>
 <form id="uploadForm">
-  <input type="file" name="file" accept=".csv" required>
+  <input type="file" id="csvFile" accept=".csv" required>
   <button type="submit">アップロード</button>
 </form>
 
 <h2>登録済み 〇執対応者一覧</h2>
 <ul id="lenderList"></ul>
 
-<script>
-  document.getElementById("logoutBtn").addEventListener("click", async () => {
-    const res = await fetch("/logout", { method: "POST" });
+<script type="module">
+  import { auth, db } from "./firebase.js";
+  import {
+    onAuthStateChanged,
+    signOut
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+  import {
+    collection,
+    getDocs,
+    addDoc,
+    writeBatch,
+    doc,
+    serverTimestamp,
+    getDoc
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    if (res.ok) {
-      window.location.href = "/login.html"; // ← ログイン画面に戻る
-    } else {
-      alert("ログアウトに失敗しました");
+  /************************
+   * 認証 & スタッフ判定
+   ************************/
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      location.href = "login.html";
+      return;
     }
-  });
-  
-async function showStaffButtons() {
-  const res = await fetch("/api/me");
-  const me = await res.json();
 
-  // me.is_staff が true の場合だけ表示
-  if (me.is_staff) {
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if (!snap.exists() || snap.data().role !== "staff") {
+      alert("スタッフ専用ページです");
+      await signOut(auth);
+      location.href = "login.html";
+      return;
+    }
+
     document.querySelectorAll(".staff-only").forEach(el => {
-      el.style.display = "inline-block";  // または "block"
+      el.style.display = "inline-block";
+    });
+
+    loadLenders();
+  });
+
+  /************************
+   * ログアウト
+   ************************/
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    await signOut(auth);
+    location.href = "login.html";
+  });
+
+  /************************
+   * 一覧読み込み
+   ************************/
+  async function loadLenders() {
+    const ul = document.getElementById("lenderList");
+    ul.innerHTML = "";
+
+    const snap = await getDocs(collection(db, "lenders"));
+    snap.forEach(d => {
+      const li = document.createElement("li");
+      li.textContent = d.data().name;
+      ul.appendChild(li);
     });
   }
-}
-window.addEventListener("DOMContentLoaded", showStaffButtons);
 
-async function checkStaff() {
-  const res = await fetch("/api/me");
-  const me = await res.json();
-  if (!me.is_staff) {
-    alert("スタッフ専用ページです");
-    window.location.href = "/login.html";
-  }
-}
-checkStaff();
-// 一覧読み込み
-async function loadLenders() {
-  const res = await fetch('/api/lenders');
-  const data = await res.json();
+  /************************
+   * CSVアップロード処理
+   ************************/
+  document.getElementById("uploadForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-  const ul = document.getElementById("lenderList");
-  ul.innerHTML = "";
+    const file = document.getElementById("csvFile").files[0];
+    if (!file) return;
 
-  data.lenders.forEach(l => {
-    const li = document.createElement("li");
-    li.textContent = l.name;
-    ul.appendChild(li);
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+    if (lines.length === 0) {
+      alert("CSVにデータがありません");
+      return;
+    }
+
+    try {
+      const batch = writeBatch(db);
+      const colRef = collection(db, "lenders");
+
+      lines.forEach(name => {
+        const ref = doc(colRef);
+        batch.set(ref, {
+          name,
+          createdAt: serverTimestamp()
+        });
+      });
+
+      await batch.commit();
+
+      alert(`${lines.length} 件を追加しました`);
+      loadLenders();
+      document.getElementById("uploadForm").reset();
+
+    } catch (err) {
+      console.error(err);
+      alert("アップロード中にエラーが発生しました");
+    }
   });
-}
-
-loadLenders();
-
-// CSVアップロード
-document.getElementById("uploadForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-
-  const formData = new FormData(e.target);
-
-  const res = await fetch("/api/lenders/upload", {
-    method: "POST",
-    body: formData
-  });
-  const data = await res.json();
-
-  if (data.ok) {
-    alert(`${data.count} 件を追加しました`);
-    loadLenders();
-  } else {
-    alert("エラー: " + data.error);
-  }
-});
 </script>
+
 </body>
 </html>

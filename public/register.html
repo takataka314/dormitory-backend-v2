@@ -1,46 +1,94 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<title>新規登録</title>
-<link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>新規登録</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+
 <h1>新規登録</h1>
 
 <form id="regForm">
-  <label>名前　　　　　　　　：<input id="name" required></label><br>
-  <label>Emailアドレス　　　：<input id="email" required></label><br>
-  <label>パスワード(4桁数字)：<input id="pin" type="password" required></label><br>
+  <label>
+    名前：
+    <input id="name" required>
+  </label><br>
+
+  <label>
+    Emailアドレス：
+    <input id="email" type="email" required>
+  </label><br>
+
+  <label>
+    パスワード（4桁数字）：
+    <input id="password" type="password" pattern="\d{4}" required>
+  </label><br>
+
   <button type="submit">登録</button>
 </form>
 
-<p><button onclick="location.href='login.html'">ログインに戻る</button></p>
+<p>
+  <button onclick="location.href='login.html'">
+    ログインに戻る
+  </button>
+</p>
 
-<script>
-document.getElementById('regForm').addEventListener('submit', async e=>{
-  e.preventDefault();
+<pre id="error" style="color:red;"></pre>
 
-  const body = {
-    name: document.getElementById('name').value,
-    email: document.getElementById('email').value,
-    pin: document.getElementById('pin').value,
-  };
+<script type="module">
+  import { auth, db } from "./firebase.js";
+  import {
+    createUserWithEmailAndPassword
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+  import {
+    doc,
+    setDoc,
+    serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-  const res = await fetch('/api/register',{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(body)
+  const form = document.getElementById("regForm");
+  const errorEl = document.getElementById("error");
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorEl.textContent = "";
+
+    const name = document.getElementById("name").value.trim();
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+
+    if (!/^\d{4}$/.test(password)) {
+      errorEl.textContent = "パスワードは4桁の数字にしてください";
+      return;
+    }
+
+    try {
+      // ① Firebase Auth 登録
+      const cred = await createUserWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
+
+      // ② Firestore users に保存
+      await setDoc(doc(db, "users", cred.user.uid), {
+        name,
+        email,
+        role: "user",          // 初期は一般ユーザー
+        createdAt: serverTimestamp()
+      });
+
+      alert("登録完了！ログインしてください");
+      location.href = "login.html";
+
+    } catch (err) {
+      console.error(err);
+      errorEl.textContent = err.message;
+    }
   });
-  const data = await res.json();
-
-  if(data.ok){
-    alert("登録完了！ログインしてください");
-    location.href="login.html";
-  }else{
-    alert("エラー：" + data.error);
-  }
-});
 </script>
+
 </body>
 </html>

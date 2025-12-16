@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>物品状態一覧（スタッフ用）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body { font-family: sans-serif; padding: 20px; }
     h1 { margin-bottom: 20px; }
@@ -15,60 +16,156 @@
   </style>
 </head>
 <body>
-  <h1>物品の状態一覧（スタッフ用）</h1>
 
-  <div class="search-box">
-    <input type="text" id="searchInput" placeholder="物品名・利用者名で検索" style="width:300px; padding:5px; font-size:16px;">
-  </div>
+<h1>物品の状態一覧（スタッフ用）</h1>
 
-  <table>
-    <thead>
-      <tr>
-        <th>物品名</th>
-        <th>状態</th>
-        <th>借りている人</th>
-        <th>借りた日時</th>
-        <th>返却日時</th>
-      </tr>
-    </thead>
-    <tbody id="itemStatusBody"></tbody>
-  </table>
-<a href="/staff_menu.html" class="back-btn">スタッフメニューへ戻る</a>
-<script>
-async function loadStatus() {
-  const res = await fetch('/api/staff/item_status');
-  const data = await res.json();
-  const body = document.getElementById('itemStatusBody');
-  body.innerHTML = '';
+<div class="search-box">
+  <input
+    type="text"
+    id="searchInput"
+    placeholder="物品名・利用者名で検索"
+    style="width:300px; padding:5px; font-size:16px;">
+</div>
 
-  data.forEach(row => {
-    const tr = document.createElement('tr');
-    tr.className = row.returned_at ? 'returned' : (row.borrowed_at ? 'borrowed' : '');
+<table>
+  <thead>
+    <tr>
+      <th>物品名</th>
+      <th>状態</th>
+      <th>借りている人</th>
+      <th>借りた日時</th>
+      <th>返却日時</th>
+    </tr>
+  </thead>
+  <tbody id="itemStatusBody"></tbody>
+</table>
 
-    tr.innerHTML = `
-      <td>${row.item_name}</td>
-      <td>${row.borrowed_at && !row.returned_at ? '貸出中' : '在庫'}</td>
-      <td>${row.user_name || ''}</td>
-      <td>${row.borrowed_at || ''}</td>
-      <td>${row.returned_at || ''}</td>
-    `;
+<p>
+  <a href="staff_menu.html">スタッフメニューへ戻る</a>
+</p>
 
-    body.appendChild(tr);
+<script type="module">
+  import { auth, db } from "./firebase.js";
+  import {
+    onAuthStateChanged,
+    signOut
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+  import {
+    collection,
+    getDocs,
+    query,
+    where
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  let isStaff = false;
+  let rowsCache = [];
+
+  /************************
+   * 認証 & スタッフ判定
+   ************************/
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      location.href = "login.html";
+      return;
+    }
+
+    const snap = await getDocs(
+      query(
+        collection(db, "users"),
+        where("email", "==", user.email)
+      )
+    );
+
+    if (snap.empty || snap.docs[0].data().role !== "staff") {
+      alert("スタッフ専用ページです");
+      await signOut(auth);
+      location.href = "login.html";
+      return;
+    }
+
+    isStaff = true;
+    loadStatus();
   });
-}
 
-// search filter
-const searchInput = document.getElementById('searchInput');
-searchInput.addEventListener('keyup', () => {
-  const filter = searchInput.value.toLowerCase();
-  const rows = document.querySelectorAll('#itemStatusBody tr');
-  rows.forEach(r => {
-    const text = r.innerText.toLowerCase();
-    r.style.display = text.includes(filter) ? '' : 'none';
+  /************************
+   * 状態一覧ロード
+   ************************/
+  async function loadStatus() {
+    const body = document.getElementById("itemStatusBody");
+    body.innerHTML = "";
+    rowsCache = [];
+
+    // 貸出中データ（returned_at == null）
+    const loanSnap = await getDocs(
+      query(collection(db, "loans"), where("returned_at", "==", null))
+    );
+
+    loanSnap.forEach(d => {
+      const r = d.data();
+      rowsCache.push({
+        item_name: r.item_name,
+        state: "貸出中",
+        user_name: r.lender_name || "",
+        borrowed_at: formatDate(r.borrowed_at),
+        returned_at: ""
+      });
+    });
+
+    // 在庫データ（items）
+    const itemSnap = await getDocs(collection(db, "items"));
+    itemSnap.forEach(d => {
+      const i = d.data();
+      rowsCache.push({
+        item_name: i.name,
+        state: "在庫",
+        user_name: "",
+        borrowed_at: "",
+        returned_at: ""
+      });
+    });
+
+    renderRows(rowsCache);
+  }
+
+  /************************
+   * 描画
+   ************************/
+  function renderRows(rows) {
+    const body = document.getElementById("itemStatusBody");
+    body.innerHTML = "";
+
+    rows.forEach(r => {
+      const tr = document.createElement("tr");
+      tr.className = r.state === "貸出中" ? "borrowed" : "returned";
+
+      tr.innerHTML = `
+        <td>${r.item_name}</td>
+        <td>${r.state}</td>
+        <td>${r.user_name}</td>
+        <td>${r.borrowed_at}</td>
+        <td>${r.returned_at}</td>
+      `;
+
+      body.appendChild(tr);
+    });
+  }
+
+  /************************
+   * 検索フィルタ
+   ************************/
+  document.getElementById("searchInput").addEventListener("keyup", () => {
+    const filter = searchInput.value.toLowerCase();
+    const filtered = rowsCache.filter(r =>
+      `${r.item_name} ${r.user_name}`.toLowerCase().includes(filter)
+    );
+    renderRows(filtered);
   });
-});
 
-loadStatus();
+  function formatDate(ts) {
+    if (!ts) return "";
+    return ts.toDate().toLocaleString("ja-JP");
+  }
 </script>
+
 </body>
 </html>

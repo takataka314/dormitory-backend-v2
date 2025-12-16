@@ -2,8 +2,6 @@ import pkg from "pg";
 const { Pool } = pkg;
 import crypto from "crypto";
 
-const isCloudRun = !!process.env.INSTANCE_CONNECTION_NAME;
-
 export const pool = new Pool({
   user: process.env.DB_USER,
   password: process.env.DB_PASS,

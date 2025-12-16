@@ -1,67 +1,147 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<title>ログイン</title>
-<link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ログイン</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    select, input {
+      width: 100%;
+      max-width: 300px;
+      margin-bottom: 8px;
+    }
+  </style>
 </head>
 <body>
+
 <h1>ログイン</h1>
 
 <form id="loginForm">
-  <label>名前　　　　　　　　：
-    <select id="nameSelect" required></select>
+  <!-- 名前検索 -->
+  <label>
+    名前検索：
+    <input type="text" id="nameSearch" placeholder="名前を入力">
   </label><br>
 
-  <label>パスワード (4桁数字)：
-    <input type="password" id="pin" required>
+  <!-- 名前選択 -->
+  <label>
+    名前：
+    <select id="nameSelect" required size="5"></select>
+  </label><br>
+
+  <!-- パスワード -->
+  <label>
+    パスワード：
+    <input type="password" id="password" required>
   </label><br>
 
   <button type="submit">ログイン</button>
 </form>
 
+<p>
+  <button onclick="location.href='register.html'">
+    新規登録はこちら
+  </button>
+</p>
 
-<p><button onclick="location.href='register.html'">新規登録はこちら</button></p>
+<pre id="error" style="color:red;"></pre>
 
-<script>
-async function loadLoginNames() {
-  const res = await fetch('/api/login-names');
-  const data = await res.json();
+<script type="module">
+  import { auth, db } from "./firebase.js";
+  import {
+    signInWithEmailAndPassword,
+    onAuthStateChanged
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+  import {
+    collection,
+    getDocs,
+    query,
+    orderBy
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-  const select = document.getElementById('nameSelect');
-  select.innerHTML = '';
+  const nameSelect = document.getElementById("nameSelect");
+  const nameSearch = document.getElementById("nameSearch");
+  const errorEl = document.getElementById("error");
 
-  data.names.forEach(u => {
-    const opt = document.createElement('option');
-    opt.value = u.id;
-    opt.textContent = u.name + (u.type === 'staff' ? '（スタッフ）' : '');
-    select.appendChild(opt);
-  });
-}
-loadLoginNames();
+  let users = []; // { name, email, role }
 
-document.getElementById('loginForm').addEventListener('submit', async e => {
-  e.preventDefault();
-  const name = document.getElementById('nameSelect').value;
-  const pin = document.getElementById('pin').value;
+  /**********************
+   * ユーザー一覧取得
+   **********************/
+  async function loadUsers() {
+    const q = query(collection(db, "users"), orderBy("name"));
+    const snap = await getDocs(q);
 
-  const res = await fetch('/api/login', {
-    method: 'POST',
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, pin })
-  });
-  const data = await res.json();
-
-  if (data.ok) {
-    if (data.role === "staff") {
-      location.href = "staff_menu.html";
-    } else {
-      location.href = "lend.html";
-    }
-  } else {
-    alert(data.error);
+    users = snap.docs.map(d => d.data());
+    renderOptions(users);
   }
-});
+
+  /**********************
+   * select描画
+   **********************/
+  function renderOptions(list) {
+    nameSelect.innerHTML = "";
+    list.forEach(u => {
+      const opt = document.createElement("option");
+      opt.value = u.email;          // 内部的には email
+      opt.textContent =
+        u.name + (u.role === "staff" ? "（スタッフ）" : "");
+      nameSelect.appendChild(opt);
+    });
+  }
+
+  /**********************
+   * 名前検索（部分一致）
+   **********************/
+  nameSearch.addEventListener("input", () => {
+    const keyword = nameSearch.value.trim();
+    const filtered = users.filter(u =>
+      u.name.includes(keyword)
+    );
+    renderOptions(filtered);
+  });
+
+  /**********************
+   * ログイン処理
+   **********************/
+  document.getElementById("loginForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorEl.textContent = "";
+
+    if (!nameSelect.value) {
+      errorEl.textContent = "名前を選択してください";
+      return;
+    }
+
+    try {
+      await signInWithEmailAndPassword(
+        auth,
+        nameSelect.value,              // email
+        document.getElementById("password").value
+      );
+    } catch (err) {
+      errorEl.textContent = "ログインに失敗しました";
+    }
+  });
+
+  /**********************
+   * ログイン済み判定
+   **********************/
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) return;
+
+    const u = users.find(x => x.email === user.email);
+    if (!u) return;
+
+    location.href =
+      u.role === "staff"
+        ? "staff_menu.html"
+        : "lend.html";
+  });
+
+  loadUsers();
 </script>
+
 </body>
 </html>

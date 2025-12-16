@@ -28,22 +28,61 @@ A4用紙"></textarea>
     <div id="result" class="result"></div>
   </div>
   <a href="/staff_menu.html" class="back-btn">スタッフメニューへ戻る</a>
-<script>
-async function uploadItems() {
-  const text = document.getElementById('bulkInput').value.trim();
-  if (!text) return alert('入力してください');
+<script type="module">
+  import { db } from "./firebase.js";
+  import {
+    collection,
+    addDoc,
+    serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-  const items = text.split(/\n+/).map(s => s.trim()).filter(Boolean);
+  // グローバルに公開（onclick等から呼べるように）
+  window.uploadItems = async function () {
+    const text = document.getElementById("bulkInput").value.trim();
+    if (!text) {
+      alert("入力してください");
+      return;
+    }
 
-  const res = await fetch('/api/staff/bulk_items', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items })
-  });
+    // 1行ずつ配列化
+    const items = text
+      .split(/\n+/)
+      .map(s => s.trim())
+      .filter(Boolean);
 
-  const data = await res.json();
-  document.getElementById('result').textContent = JSON.stringify(data, null, 2);
-}
+    try {
+      const colRef = collection(db, "items");
+      const results = [];
+
+      for (const name of items) {
+        const docRef = await addDoc(colRef, {
+          name,
+          createdAt: serverTimestamp()
+        });
+        results.push({ id: docRef.id, name });
+      }
+
+      document.getElementById("result").textContent =
+        JSON.stringify(
+          { ok: true, count: results.length, items: results },
+          null,
+          2
+        );
+
+      document.getElementById("bulkInput").value = "";
+
+    } catch (err) {
+      console.error(err);
+      document.getElementById("result").textContent =
+        JSON.stringify(
+          { ok: false, error: err.message },
+          null,
+          2
+        );
+    }
+  };
 </script>
+
+
 </body>
 </html>

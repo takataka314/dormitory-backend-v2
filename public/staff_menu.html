@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<title>〇執管理メニュー</title>
-<link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>〇執管理メニュー</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+
 <div class="header">
   <h1>〇執管理メニュー</h1>
   <button id="logoutBtn">ログアウト</button>
@@ -19,26 +21,53 @@
   <li><button onclick="location.href='lenders.html'">〇執対応者管理</button></li>
   <li><button onclick="location.href='history.html'">履歴一覧</button></li>
 </ul>
-<script>
-  async function checkStaff() {
-    const res = await fetch("/api/me");
-    const me = await res.json();
-    if (!me.is_staff) {
-      alert("スタッフ専用ページです");
-      window.location.href = "/login.html";
-    }
-  }
-  checkStaff();
-  
-  document.getElementById("logoutBtn").addEventListener("click", async () => {
-    const res = await fetch("/logout", { method: "POST" });
 
-    if (res.ok) {
-      window.location.href = "/login.html"; // ← ログイン画面に戻る
-    } else {
-      alert("ログアウトに失敗しました");
+<script type="module">
+  import { auth, db } from "./firebase.js";
+  import {
+    onAuthStateChanged,
+    signOut
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+  import {
+    doc,
+    getDoc
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  /************************
+   * 認証 & スタッフ判定
+   ************************/
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      // 未ログイン
+      window.location.href = "login.html";
+      return;
     }
+
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if (!snap.exists()) {
+      alert("ユーザー情報が存在しません");
+      await signOut(auth);
+      window.location.href = "login.html";
+      return;
+    }
+
+    if (snap.data().role !== "staff") {
+      alert("スタッフ専用ページです");
+      window.location.href = "login.html";
+      return;
+    }
+
+    // staff ならそのまま表示
+  });
+
+  /************************
+   * ログアウト
+   ************************/
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    await signOut(auth);
+    window.location.href = "login.html";
   });
 </script>
+
 </body>
 </html>

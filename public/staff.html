@@ -184,10 +184,12 @@ const staffHtml = `<!doctype html>
   // 初期ロード
   (async ()=>{ await loadDue(); await loadItems(); await loadHistory('',1); await loadUsers(); })();
 </script>
+<script type="module" src="./firebase.js"></script>
+
 </body>
 </html>`;
-
+<!-- 
 // 起動時に public フォルダへファイル書き出し（簡易）
 if (!fs.existsSync(path.join(__dirname, 'public'))) fs.mkdirSync(path.join(__dirname, 'public'));
 fs.writeFileSync(path.join(__dirname, 'public','index.html'), indexHtml);
-fs.writeFileSync(path.join(__dirname, 'public','staff.html'), staffHtml);
+fs.writeFileSync(path.join(__dirname, 'public','staff.html'), staffHtml); -->

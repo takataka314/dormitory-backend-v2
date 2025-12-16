@@ -51,14 +51,8 @@ app.use(
 //---------------------------------------------------------
 app.use(express.static(path.join(__dirname, "public")));
 
-//---------------------------------------------------------
-// DB 初期化 & 初期スタッフ作成
-//---------------------------------------------------------
-
-
 // サーバー起動前に DB 準備
 
-await initDb();
 async function initDefaultStaff() {
   const name = "marusitsu";
   const email = "keiteki326sikkou@gmail.com";
@@ -85,7 +79,21 @@ async function initDefaultStaff() {
     console.log("ℹ 初期スタッフは既に存在します:", name);
   }
 }
-await initDefaultStaff();
+
+async function bootstrap() {
+  await initDb();
+  await initDefaultStaff();
+
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+  });
+}
+
+bootstrap().catch(err => {
+  console.error("❌ Startup failed:", err);
+  process.exit(1);
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
@@ -119,7 +127,7 @@ app.get("/api/me", requireLogin, async (req, res) => {
   res.json({
     id: user.id,
     name: user.name,
-    is_staff: user.is_staff === 1,
+    is_staff: user.is_staff,
   });
 });
 
@@ -144,7 +152,7 @@ app.get("/api/login-names", async (req, res) => {
     names: result.rows.map((u) => ({
       id: u.id,
       name: u.name,
-      type: u.is_staff === 1 ? "staff" : "user",
+      type: u.is_staff ? "staff" : "user",
     })),
   });
 });
@@ -167,24 +175,53 @@ app.post("/api/login", async (req, res) => {
   }
 
   req.session.userId = user.id;
-  req.session.isStaff = user.is_staff === 1;
+  req.session.isStaff = user.is_staff;
 
-  res.json({ ok: true, role: user.is_staff === 1 ? "staff" : "user" });
+  res.json({ ok: true, role: user.is_staff ? "staff" : "user" });
 });
 
 //---------------------------------------------------------
 // API: 新規登録（一般ユーザー）
 //---------------------------------------------------------
+// app.post("/api/register", async (req, res) => {
+//   const { name, email, pin } = req.body;
+
+//   try {
+//     const hashed = hashPin(pin);
+//     await pool.query(
+//       `
+//       INSERT INTO users (name, email, pin, is_staff)
+//       VALUES ($1, $2, $3, 0)
+//     `,
+//       [name, email, hashed]
+//     );
+
+//     res.json({ ok: true });
+//   } catch (err) {
+//     console.error("register error:", err);
+//     res.status(500).json({ ok: false, error: "登録に失敗しました" });
+//   }
+// });
 app.post("/api/register", async (req, res) => {
   const { name, email, pin } = req.body;
 
+  if (!name || !pin) {
+    return res.status(400).json({ ok: false, error: "必須項目が不足しています" });
+  }
+
+  if (!/^\d{4}$/.test(pin)) {
+    return res.status(400).json({
+      ok: false,
+      error: "PINは4桁の数字で入力してください",
+    });
+  }
+
   try {
     const hashed = hashPin(pin);
+
     await pool.query(
-      `
-      INSERT INTO users (name, email, pin, is_staff)
-      VALUES ($1, $2, $3, 0)
-    `,
+      `INSERT INTO users (name, email, pin, is_staff)
+       VALUES ($1, $2, $3, false)`,
       [name, email, hashed]
     );
 
@@ -517,7 +554,7 @@ app.get("/api/history", requireLogin, requireStaff, async (req, res) => {
     [staffId]
   );
   const user = userResult.rows[0];
-  if (!user || user.is_staff !== 1) {
+  if (!user || ! user.is_staff) {
     return res.status(403).json({ error: "アクセス権がありません" });
   }
 
@@ -529,12 +566,12 @@ app.get("/api/history", requireLogin, requireStaff, async (req, res) => {
       loans.id,
       items.name   AS item_name,
       items.category,
-      lenders.name AS lender_name,
+      users.name AS lender_name,
       loans.qty,
       loans.room,
       loans.borrowed_at,
       loans.returned_at,
-      users.name   AS staff_name
+      lenders.name AS staff_name
     FROM loans
       JOIN items   ON loans.item_id   = items.id
       JOIN lenders ON loans.lender_id = lenders.id

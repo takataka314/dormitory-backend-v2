@@ -2,12 +2,16 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>貸出ページ</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+
 <div class="header">
-  <button onclick="location.href='staff_menu.html'" class="staff-only">〇執管理メニューへ戻る</button>
+  <button onclick="location.href='staff_menu.html'" class="staff-only" style="display:none">
+    〇執管理メニューへ戻る
+  </button>
   <h1>貸出</h1>
   <button id="logoutBtn">ログアウト</button>
 </div>
@@ -30,115 +34,168 @@
   </label><br><br>
 
   <button type="submit">貸出</button>
-
 </form>
+
 <div class="footer">
-  <button onclick="location.href='return.html'" justify-content="space-between">返却ページ</button>
+  <button onclick="location.href='return.html'">返却ページ</button>
 </div>
 
+<script type="module">
+  import { auth, db } from "./firebase.js";
+  import {
+    onAuthStateChanged,
+    signOut
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+  import {
+    collection,
+    getDocs,
+    getDoc,
+    doc,
+    addDoc,
+    updateDoc,
+    serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+  let currentUser = null;
+  let isStaff = false;
+  let itemsCache = [];
 
-<script>
-  document.getElementById("logoutBtn").addEventListener("click", async () => {
-    const res = await fetch("/logout", { method: "POST" });
-
-    if (res.ok) {
-      window.location.href = "/login.html"; // ← ログイン画面に戻る
-    } else {
-      alert("ログアウトに失敗しました");
+  /**********************
+   * 認証 & 権限判定
+   **********************/
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      location.href = "login.html";
+      return;
     }
+
+    currentUser = user;
+    const snap = await getDoc(doc(db, "users", user.uid));
+
+    if (!snap.exists()) {
+      alert("ユーザー情報がありません");
+      await signOut(auth);
+      return;
+    }
+
+    isStaff = snap.data().role === "staff";
+
+    if (isStaff) {
+      document.querySelectorAll(".staff-only").forEach(el => {
+        el.style.display = "inline-block";
+      });
+    }
+
+    loadData();
   });
 
-async function showStaffButtons() {
-  const res = await fetch("/api/me");
-  const me = await res.json();
+  /**********************
+   * ログアウト
+   **********************/
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    await signOut(auth);
+    location.href = "login.html";
+  });
 
-  // me.is_staff が true の場合だけ表示
-  if (me.is_staff) {
-    document.querySelectorAll(".staff-only").forEach(el => {
-      el.style.display = "inline-block";  // または "block"
+  /**********************
+   * データロード
+   **********************/
+  async function loadData() {
+    // --- items ---
+    const itemSnap = await getDocs(collection(db, "items"));
+    itemsCache = [];
+
+    const itemSelect = document.getElementById("itemSelect");
+    itemSelect.innerHTML = "";
+
+    itemSnap.forEach(d => {
+      const i = d.data();
+      if (i.available > 0) {
+        itemsCache.push({ id: d.id, ...i });
+
+        const opt = document.createElement("option");
+        opt.value = d.id;
+        opt.textContent = `${i.category} - ${i.name}（残:${i.available}）`;
+        opt.dataset.available = i.available;
+        itemSelect.appendChild(opt);
+      }
+    });
+
+    updateQtyOptions();
+
+    // --- lenders ---
+    const lenderSnap = await getDocs(collection(db, "lenders"));
+    const fromSelect = document.getElementById("fromSelect");
+    fromSelect.innerHTML = "";
+
+    lenderSnap.forEach(d => {
+      const opt = document.createElement("option");
+      opt.value = d.id;
+      opt.textContent = d.data().name;
+      fromSelect.appendChild(opt);
     });
   }
-}
-window.addEventListener("DOMContentLoaded", showStaffButtons);
 
-// ---------- アイテム & 貸出人ロード ----------
-async function loadData() {
-  // items
-  const itemsRes = await fetch('/api/items');
-  const items = await itemsRes.json();
+  /**********************
+   * 数量選択更新
+   **********************/
+  function updateQtyOptions() {
+    const itemSelect = document.getElementById("itemSelect");
+    const qtySelect = document.getElementById("qtySelect");
+    qtySelect.innerHTML = "";
 
-  const itemSelect = document.getElementById('itemSelect');
-  itemSelect.innerHTML = '';
+    if (!itemSelect.selectedOptions.length) return;
+    const available = Number(itemSelect.selectedOptions[0].dataset.available);
 
-  items.items.filter(i=>i.available>0).forEach(i=>{
-    const opt = document.createElement('option');
-    opt.value = i.id;
-    opt.textContent = `${i.category} - ${i.name}（残:${i.available}）`;
-    opt.dataset.available = i.available;
-    itemSelect.appendChild(opt);
-  });
-  updateQtyOptions();
-
-  // lenders
-  const lendersRes = await fetch('/api/lenders');
-  const lendersData = await lendersRes.json();
-
-  const fromSelect = document.getElementById('fromSelect');
-  fromSelect.innerHTML = '';
-
-  lendersData.lenders.forEach(l=>{
-    const opt = document.createElement('option');
-    opt.value = l.id;
-    opt.textContent = l.name;
-    fromSelect.appendChild(opt);
-  });
-}
-
-function updateQtyOptions() {
-  const itemSelect = document.getElementById('itemSelect');
-  const qtySelect = document.getElementById('qtySelect');
-  qtySelect.innerHTML = "";
-
-  const available = parseInt(itemSelect.selectedOptions[0].dataset.available);
-  for(let i=1;i<=available;i++){
-    const opt = document.createElement("option");
-    opt.value = i;
-    opt.textContent = i;
-    qtySelect.appendChild(opt);
+    for (let i = 1; i <= available; i++) {
+      const opt = document.createElement("option");
+      opt.value = i;
+      opt.textContent = i;
+      qtySelect.appendChild(opt);
+    }
   }
-}
 
-document.getElementById('itemSelect').addEventListener('change', updateQtyOptions);
+  document.getElementById("itemSelect").addEventListener("change", updateQtyOptions);
 
-// ---------- 貸出処理 ----------
-document.getElementById('lendForm').addEventListener('submit', async e=>{
-  e.preventDefault();
+  /**********************
+   * 貸出処理
+   **********************/
+  document.getElementById("lendForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-  const body = {
-    item_id: Number(document.getElementById('itemSelect').value),
-    qty: Number(document.getElementById('qtySelect').value),
-    lender_id: Number(document.getElementById('fromSelect').value),
-    room: document.getElementById('roomInput').value
-  };
+    const itemId = document.getElementById("itemSelect").value;
+    const qty = Number(document.getElementById("qtySelect").value);
+    const room = document.getElementById("roomInput").value;
+    const lenderId = document.getElementById("fromSelect").value;
 
-  const res = await fetch('/api/loans',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body)
-  });
-  const data = await res.json();
+    const item = itemsCache.find(i => i.id === itemId);
+    if (!item || item.available < qty) {
+      alert("在庫が不足しています");
+      return;
+    }
 
-  if(data.ok){
+    // 在庫更新
+    await updateDoc(doc(db, "items", itemId), {
+      available: item.available - qty
+    });
+
+    // 貸出記録
+    await addDoc(collection(db, "loans"), {
+      item_id: itemId,
+      item_name: item.name,
+      qty,
+      room,
+      lender_id: lenderId,
+      borrowed_at: serverTimestamp(),
+      returned_at: null,
+      staff_uid: currentUser.uid
+    });
+
     alert("貸出しました！");
+    document.getElementById("lendForm").reset();
     loadData();
-  }else{
-    alert(data.error);
-  }
-});
-
-// 初期ロード
-loadData();
+  });
 </script>
+
 </body>
 </html>

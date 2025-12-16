@@ -2,6 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <title>貸出・返却履歴一覧</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -39,74 +41,129 @@
     <tbody></tbody>
   </table>
 
-  <script>
-  document.getElementById("logoutBtn").addEventListener("click", async () => {
-    const res = await fetch("/logout", { method: "POST" });
+<script type="module">
+  import { auth, db } from "./firebase.js";
+  import {
+    onAuthStateChanged,
+    signOut
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+  import {
+    doc,
+    getDoc,
+    collection,
+    getDocs,
+    query,
+    where,
+    orderBy
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    if (res.ok) {
-      window.location.href = "/login.html"; // ← ログイン画面に戻る
-    } else {
-      alert("ログアウトに失敗しました");
-    }
-  });
-  
-    async function showStaffButtons() {
-    const res = await fetch("/api/me");
-    const me = await res.json();
+  let currentUser = null;
+  let isStaff = false;
 
-    // me.is_staff が true の場合だけ表示
-    if (me.is_staff) {
-        document.querySelectorAll(".staff-only").forEach(el => {
-        el.style.display = "inline-block";  // または "block"
-        });
-    }
-    }
-    window.addEventListener("DOMContentLoaded", showStaffButtons);
-
-    async function checkStaff() {
-    const res = await fetch("/api/me");
-    const me = await res.json();
-    if (!me.is_staff) {
-        alert("スタッフ専用ページです");
-        window.location.href = "/login.html";
-    }
-    }
-    checkStaff();
-
-    async function loadHistory() {
-      const q = document.getElementById("searchInput").value;
-      const onlyNot = document.getElementById("onlyNotReturned").checked;
-
-      const res = await fetch(`/api/history?q=${encodeURIComponent(q)}&onlyNot=${onlyNot ? 1 : 0}`);
-      const list = await res.json();
-
-      const tbody = document.querySelector("#historyTable tbody");
-      tbody.innerHTML = "";
-
-      list.forEach(r => {
-        const tr = document.createElement("tr");
-
-        tr.innerHTML = `
-          <td>${r.id}</td>
-          <td>${r.item_name}</td>
-          <td>${r.category}</td>
-          <td>${r.lender_name}</td>
-          <td>${r.qty}</td>
-          <td>${r.room}</td>
-          <td>${r.borrowed_at}</td>
-          <td class="${r.returned_at ? "returned" : "not-returned"}">
-            ${r.returned_at || "未返却"}
-          </td>
-          <td>${r.staff_name || "-"}</td>
-        `;
-
-        tbody.appendChild(tr);
-      });
+  /**********************
+   * 認証状態監視
+   **********************/
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      window.location.href = "/login.html";
+      return;
     }
 
-    // 初期ロード
+    currentUser = user;
+
+    const userDoc = await getDoc(doc(db, "users", user.uid));
+    if (!userDoc.exists()) {
+      alert("権限情報がありません");
+      await signOut(auth);
+      return;
+    }
+
+    isStaff = userDoc.data().role === "staff";
+
+    if (!isStaff) {
+      alert("スタッフ専用ページです");
+      window.location.href = "/login.html";
+      return;
+    }
+
+    showStaffButtons();
     loadHistory();
-  </script>
+  });
+
+  /**********************
+   * ログアウト
+   **********************/
+  document.getElementById("logoutBtn")?.addEventListener("click", async () => {
+    await signOut(auth);
+    window.location.href = "/login.html";
+  });
+
+  /**********************
+   * スタッフ表示制御
+   **********************/
+  function showStaffButtons() {
+    document.querySelectorAll(".staff-only").forEach(el => {
+      el.style.display = "inline-block";
+    });
+  }
+
+  /**********************
+   * 履歴取得（Firestore）
+   **********************/
+  async function loadHistory() {
+    const qText = document.getElementById("searchInput")?.value || "";
+    const onlyNot = document.getElementById("onlyNotReturned")?.checked;
+
+    let qRef = collection(db, "history");
+    let qFinal;
+
+    if (onlyNot) {
+      qFinal = query(
+        qRef,
+        where("returned_at", "==", null),
+        orderBy("borrowed_at", "desc")
+      );
+    } else {
+      qFinal = query(
+        qRef,
+        orderBy("borrowed_at", "desc")
+      );
+    }
+
+    const snap = await getDocs(qFinal);
+    const tbody = document.querySelector("#historyTable tbody");
+    tbody.innerHTML = "";
+
+    snap.forEach(docSnap => {
+      const r = docSnap.data();
+      const text = `${r.item_name} ${r.category} ${r.lender_name} ${r.room}`;
+      if (qText && !text.includes(qText)) return;
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${docSnap.id}</td>
+        <td>${r.item_name}</td>
+        <td>${r.category}</td>
+        <td>${r.lender_name}</td>
+        <td>${r.qty}</td>
+        <td>${r.room}</td>
+        <td>${formatDate(r.borrowed_at)}</td>
+        <td class="${r.returned_at ? "returned" : "not-returned"}">
+          ${r.returned_at ? formatDate(r.returned_at) : "未返却"}
+        </td>
+        <td>${r.staff_name || "-"}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function formatDate(ts) {
+    if (!ts) return "";
+    return ts.toDate().toLocaleString("ja-JP");
+  }
+</script>
+
+
 
 </body>
 </html>

@@ -2,13 +2,22 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>返却ページ</title>
   <link rel="stylesheet" href="styles.css">
-
+  <style>
+    tr.selected { background: #e0f0ff; }
+  </style>
 </head>
 <body>
+
 <div class="header">
-  <button onclick="location.href='staff_menu.html'" class="staff-only">〇執管理メニューへ戻る</button>
+  <button
+    onclick="location.href='staff_menu.html'"
+    class="staff-only"
+    style="display:none">
+    〇執管理メニューへ戻る
+  </button>
   <h1>返却</h1>
   <button id="logoutBtn">ログアウト</button>
 </div>
@@ -30,105 +39,141 @@
 
 <button id="returnBtn">返却する</button>
 
-<br>
 <div class="footer">
-  <button onclick="location.href='lend.html'",justify-content="space-between">貸出ページ</button>
+  <button onclick="location.href='lend.html'">貸出ページ</button>
 </div>
 
-<script>
-  document.getElementById("logoutBtn").addEventListener("click", async () => {
-    const res = await fetch("/logout", { method: "POST" });
+<script type="module">
+  import { auth, db } from "./firebase.js";
+  import {
+    onAuthStateChanged,
+    signOut
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+  import {
+    collection,
+    getDocs,
+    query,
+    where,
+    doc,
+    runTransaction,
+    serverTimestamp,
+    getDoc
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    if (res.ok) {
-      window.location.href = "/login.html"; // ← ログイン画面に戻る
-    } else {
-      alert("ログアウトに失敗しました");
+  let isStaff = false;
+
+  /**********************
+   * 認証 & スタッフ判定
+   **********************/
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      location.href = "login.html";
+      return;
+    }
+
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if (snap.exists() && snap.data().role === "staff") {
+      isStaff = true;
+      document.querySelectorAll(".staff-only").forEach(el => {
+        el.style.display = "inline-block";
+      });
+    }
+
+    loadUnreturned();
+  });
+
+  /**********************
+   * ログアウト
+   **********************/
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    await signOut(auth);
+    location.href = "login.html";
+  });
+
+  /**********************
+   * 未返却一覧ロード
+   **********************/
+  async function loadUnreturned() {
+    const tbody = document.querySelector("#loansTable tbody");
+    tbody.innerHTML = "";
+
+    const snap = await getDocs(
+      query(collection(db, "loans"), where("returned_at", "==", null))
+    );
+
+    snap.forEach(d => {
+      const r = d.data();
+      const tr = document.createElement("tr");
+      tr.dataset.id = d.id;
+
+      tr.innerHTML = `
+        <td><input type="checkbox" class="row-check"></td>
+        <td>${r.room}</td>
+        <td>${r.user_name || ""}</td>
+        <td>${r.item_name}</td>
+        <td>${r.qty}</td>
+        <td>${r.lender_name || ""}</td>
+        <td>${formatDate(r.borrowed_at)}</td>
+      `;
+
+      const checkbox = tr.querySelector(".row-check");
+      checkbox.addEventListener("change", () => {
+        tr.classList.toggle("selected", checkbox.checked);
+      });
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  /**********************
+   * 複数返却処理（transaction）
+   **********************/
+  document.getElementById("returnBtn").addEventListener("click", async () => {
+    const selected = [...document.querySelectorAll(".row-check:checked")];
+    if (selected.length === 0) {
+      alert("返却する行を選択してください（複数可）");
+      return;
+    }
+
+    try {
+      for (const chk of selected) {
+        const loanId = chk.closest("tr").dataset.id;
+
+        await runTransaction(db, async (tx) => {
+          const loanRef = doc(db, "loans", loanId);
+          const loanSnap = await tx.get(loanRef);
+
+          if (!loanSnap.exists()) return;
+          const loan = loanSnap.data();
+          if (loan.returned_at) return;
+
+          const itemRef = doc(db, "items", loan.item_id);
+          const itemSnap = await tx.get(itemRef);
+          if (!itemSnap.exists()) return;
+
+          tx.update(loanRef, {
+            returned_at: serverTimestamp()
+          });
+
+          tx.update(itemRef, {
+            available: (itemSnap.data().available || 0) + loan.qty
+          });
+        });
+      }
+
+      alert("返却しました！");
+      loadUnreturned();
+
+    } catch (err) {
+      console.error(err);
+      alert("返却処理中にエラーが発生しました");
     }
   });
 
-async function showStaffButtons() {
-  const res = await fetch("/api/me");
-  const me = await res.json();
-
-  // me.is_staff が true の場合だけ表示
-  if (me.is_staff) {
-    document.querySelectorAll(".staff-only").forEach(el => {
-      el.style.display = "inline-block";  // または "block"
-    });
+  function formatDate(ts) {
+    if (!ts) return "";
+    return ts.toDate().toLocaleString("ja-JP");
   }
-}
-window.addEventListener("DOMContentLoaded", showStaffButtons);
-
-// --------------------------------------------------
-// 未返却データ読み込み（チェックボックス + 複数選択対応）
-// --------------------------------------------------
-async function loadUnreturned() {
-  const res = await fetch("/api/loans/unreturned");
-  const data = await res.json();
-
-  const tbody = document.querySelector("#loansTable tbody");
-  tbody.innerHTML = "";
-
-  data.loans.forEach(row => {
-    const tr = document.createElement("tr");
-    tr.dataset.id = row.id;
-
-    tr.innerHTML = `
-      <td><input type="checkbox" class="row-check"></td>
-      <td>${row.room}</td>
-      <td>${row.userName}</td>
-      <td>${row.itemName}</td>
-      <td>${row.qty}</td>
-      <td>${row.lenderName}</td>
-      <td>${row.borrowed_at}</td>
-    `;
-
-    const checkbox = tr.querySelector(".row-check");
-
-    // チェック状態で背景色切替
-    checkbox.addEventListener("change", () => {
-      if (checkbox.checked) {
-        tr.classList.add("selected");
-      } else {
-        tr.classList.remove("selected");
-      }
-    });
-
-    tbody.appendChild(tr);
-  });
-}
-
-// --------------------------------------------------
-// 複数返却API呼び出し
-// --------------------------------------------------
-document.getElementById("returnBtn").addEventListener("click", async () => {
-  const selected = [...document.querySelectorAll(".row-check:checked")];
-
-  if (selected.length === 0) {
-    alert("返却する行を選択してください（複数可）");
-    return;
-  }
-
-  const ids = selected.map(chk => chk.closest("tr").dataset.id);
-
-  const res = await fetch("/api/loans/return/bulk", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids })
-  });
-
-  const data = await res.json();
-
-  if (data.ok) {
-    alert("返却しました！");
-    loadUnreturned();
-  } else {
-    alert("エラー: " + data.error);
-  }
-});
-
-// 初期ロード
-loadUnreturned();
 </script>
 
 </body>

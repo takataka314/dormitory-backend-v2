@@ -9,7 +9,7 @@ const User = sequelize.define(
     name: { type: DataTypes.STRING, allowNull: false },
     email: { type: DataTypes.STRING },
     pin: { type: DataTypes.STRING, allowNull: false },
-    is_staff: { type: DataTypes.INTEGER, defaultValue: 0 },
+    is_staff: { type: DataTypes.BOOLEAN, defaultValue: false },
     created_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
   },
   { timestamps: false }

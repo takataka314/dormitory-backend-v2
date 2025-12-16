@@ -2,6 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>物品追加</title>
   <link rel="stylesheet" href="styles.css">
 
@@ -24,128 +25,136 @@
 <table id="previewTable"></table>
 
 <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
 
-<script>
-  document.getElementById("logoutBtn").addEventListener("click", async () => {
-    const res = await fetch("/logout", { method: "POST" });
+<script type="module">
+  import { db } from "./firebase.js";
+  import {
+    collection,
+    addDoc,
+    serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    if (res.ok) {
-      window.location.href = "/login.html"; // ← ログイン画面に戻る
-    } else {
-      alert("ログアウトに失敗しました");
-    }
-  });
-  
-async function showStaffButtons() {
-  const res = await fetch("/api/me");
-  const me = await res.json();
-
-  // me.is_staff が true の場合だけ表示
-  if (me.is_staff) {
-    document.querySelectorAll(".staff-only").forEach(el => {
-      el.style.display = "inline-block";  // または "block"
-    });
+  /**********************
+   * 権限チェック（仮）
+   * ※ Auth 導入後に置き換え
+   **********************/
+  function checkStaff() {
+    // 今は全員OK（あとで制限）
+    return true;
   }
-}
 
-window.addEventListener("DOMContentLoaded", showStaffButtons);
-
-async function checkStaff() {
-  const res = await fetch("/api/me");
-  const me = await res.json();
-  if (!me.is_staff) {
+  if (!checkStaff()) {
     alert("スタッフ専用ページです");
     window.location.href = "/login.html";
   }
-}
-checkStaff();
 
-let parsedData = [];
+  /**********************
+   * ログアウト（仮）
+   **********************/
+  document.getElementById("logoutBtn")?.addEventListener("click", () => {
+    // Auth導入後は signOut(auth)
+    window.location.href = "/login.html";
+  });
 
-// CSV / XLSX 読み込み
-function loadFile() {
-  const file = document.getElementById("fileInput").files[0];
-  if (!file) {
-    alert("ファイルを選択してください");
-    return;
-  }
+  /**********************
+   * ファイル読み込み
+   **********************/
+  let parsedData = [];
 
-  const reader = new FileReader();
-
-  reader.onload = (e) => {
-    const data = e.target.result;
-    let workbook;
-
-    if (file.name.endsWith(".xlsx")) {
-      workbook = XLSX.read(new Uint8Array(data), { type: "array" });
-    } else {
-      workbook = XLSX.read(data, { type: "string" });
+  window.loadFile = function () {
+    const file = document.getElementById("fileInput").files[0];
+    if (!file) {
+      alert("ファイルを選択してください");
+      return;
     }
 
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    const reader = new FileReader();
 
-    displayData(json);
+    reader.onload = (e) => {
+      const data = e.target.result;
+      let workbook;
+
+      if (file.name.endsWith(".xlsx")) {
+        workbook = XLSX.read(new Uint8Array(data), { type: "array" });
+      } else {
+        workbook = XLSX.read(data, { type: "string" });
+      }
+
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+      displayData(rows);
+    };
+
+    file.name.endsWith(".xlsx")
+      ? reader.readAsArrayBuffer(file)
+      : reader.readAsText(file);
   };
 
-  if (file.name.endsWith(".xlsx")) {
-    reader.readAsArrayBuffer(file);
-  } else {
-    reader.readAsText(file);
-  }
-}
-
-// 表示
-function displayData(rows) {
-  parsedData = [];
-
-  const table = document.getElementById("previewTable");
-  table.innerHTML = "";
-
-  // 必須列：カテゴリー / 物品名 / 個数
-  const header = `<tr><th>カテゴリー</th><th>物品名</th><th>個数</th></tr>`;
-  table.insertAdjacentHTML("beforeend", header);
-
-  rows.slice(1).forEach(row => {
-    if (row.length < 3) return;
-
-    const [category, name, qty] = row;
-
-    parsedData.push({ category, name, qty });
+  /**********************
+   * プレビュー表示
+   **********************/
+  function displayData(rows) {
+    parsedData = [];
+    const table = document.getElementById("previewTable");
+    table.innerHTML = "";
 
     table.insertAdjacentHTML(
       "beforeend",
-      `<tr><td>${category}</td><td>${name}</td><td>${qty}</td></tr>`
+      `<tr><th>カテゴリー</th><th>物品名</th><th>個数</th></tr>`
     );
-  });
 
-  if (parsedData.length === 0) {
-    alert("データが読み込めませんでした。");
+    rows.slice(1).forEach(row => {
+      if (row.length < 3) return;
+
+      const [category, name, qty] = row;
+
+      parsedData.push({
+        category,
+        name,
+        qty: Number(qty),
+        createdAt: serverTimestamp()
+      });
+
+      table.insertAdjacentHTML(
+        "beforeend",
+        `<tr><td>${category}</td><td>${name}</td><td>${qty}</td></tr>`
+      );
+    });
+
+    if (parsedData.length === 0) {
+      alert("データが読み込めませんでした");
+    }
   }
-}
 
-// --- DBへ追加 ---
-async function uploadItems() {
-  if (parsedData.length === 0) {
-    alert("先にファイルを読み込んでください");
-    return;
-  }
+  /**********************
+   * Firestoreへ一括追加
+   **********************/
+  window.uploadItems = async function () {
+    if (parsedData.length === 0) {
+      alert("先にファイルを読み込んでください");
+      return;
+    }
 
-  const res = await fetch("/api/items/bulk", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ items: parsedData })
-  });
+    try {
+      const colRef = collection(db, "items");
 
-  const data = await res.json();
+      for (const item of parsedData) {
+        await addDoc(colRef, item);
+      }
 
-  if (data.ok) {
-    alert("追加が完了しました！");
-  } else {
-    alert("エラー: " + data.error);
-  }
-}
+      alert("Firestore に追加しました！");
+      parsedData = [];
+      document.getElementById("previewTable").innerHTML = "";
+
+    } catch (err) {
+      console.error(err);
+      alert("Firestore 保存中にエラーが発生しました");
+    }
+  };
 </script>
+
 
 </body>
 </html>
